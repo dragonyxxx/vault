@@ -1,0 +1,179 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VaultV2 Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+<style>
+body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:20px}
+button{padding:10px 14px;margin:5px;border:none;border-radius:6px;background:#2563eb;color:white;cursor:pointer}
+button:hover{background:#1d4ed8}
+.card{background:#1e293b;padding:16px;border-radius:10px;margin-bottom:15px}
+input{padding:8px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:white}
+</style>
+</head>
+<body><h1>VaultV2 Monitor</h1><div class="card">
+<button onclick="connectWallet()">Connect Wallet</button>
+<p id="wallet"></p>
+</div><div class="card">
+<h3>Vault Info</h3>
+<p>Owner: <span id="owner"></span></p>
+<p>Heir: <span id="heir"></span></p>
+<p>Unlock Time: <span id="unlock"></span></p>
+<p>Last Activity: <span id="activity"></span></p>
+<p>Emergency Request: <span id="emergency"></span></p>
+<button onclick="loadData()">Refresh Data</button>
+</div><div class="card">
+<h3>Owner Actions</h3>
+<button onclick="heartbeat()">Heartbeat</button>
+<button onclick="withdrawAll()">Withdraw All</button>
+<button onclick="requestEmergency()">Request Emergency Withdraw</button>
+<button onclick="cancelEmergency()">Cancel Emergency</button>
+<button onclick="executeEmergency()">Execute Emergency Withdraw</button>
+</div><div class="card">
+<h3>Inheritance</h3>
+<button onclick="claimInheritance()">Claim Inheritance</button>
+</div><div class="card">
+<h3>Deposit Token</h3>
+<input id="tokenAddress" placeholder="Token Address">
+<input id="tokenAmount" placeholder="Amount (wei)">
+<button onclick="depositToken()">Deposit</button>
+</div><div class="card">
+<h3>Tracked Tokens</h3>
+<ul id="tokens"></ul>
+</div><script>
+
+const contractAddress = "PASTE_CONTRACT_ADDRESS_HERE";
+
+const abi = [
+"function owner() view returns(address)",
+"function heir() view returns(address)",
+"function unlockTime() view returns(uint256)",
+"function lastActivity() view returns(uint256)",
+"function emergencyRequestTime() view returns(uint256)",
+"function heartbeat()",
+"function withdrawAll()",
+"function requestEmergencyWithdraw()",
+"function cancelEmergencyWithdraw()",
+"function executeEmergencyWithdraw()",
+"function claimInheritance()",
+"function depositToken(address,uint256)",
+"function getTrackedTokens() view returns(address[])"
+];
+
+let provider;
+let signer;
+let contract;
+
+async function connectWallet(){
+
+if(!window.ethereum){
+alert("Install MetaMask");
+return;
+}
+
+provider = new ethers.BrowserProvider(window.ethereum);
+await provider.send("eth_requestAccounts",[]);
+
+signer = await provider.getSigner();
+
+contract = new ethers.Contract(contractAddress,abi,signer);
+
+const address = await signer.getAddress();
+
+document.getElementById("wallet").innerText = "Connected: " + address;
+
+loadData();
+
+}
+
+async function loadData(){
+
+const owner = await contract.owner();
+const heir = await contract.heir();
+const unlock = await contract.unlockTime();
+const activity = await contract.lastActivity();
+const emergency = await contract.emergencyRequestTime();
+
+
+document.getElementById("owner").innerText = owner;
+document.getElementById("heir").innerText = heir;
+
+document.getElementById("unlock").innerText = new Date(Number(unlock)*1000);
+
+document.getElementById("activity").innerText = new Date(Number(activity)*1000);
+
+document.getElementById("emergency").innerText = emergency==0 ? "None" : new Date(Number(emergency)*1000);
+
+loadTokens();
+
+}
+
+async function loadTokens(){
+
+const tokens = await contract.getTrackedTokens();
+
+const list = document.getElementById("tokens");
+list.innerHTML="";
+
+for(let t of tokens){
+
+const li=document.createElement("li");
+li.innerText=t;
+list.appendChild(li);
+
+}
+
+}
+
+async function heartbeat(){
+const tx = await contract.heartbeat();
+await tx.wait();
+alert("Heartbeat sent");
+}
+
+async function withdrawAll(){
+const tx = await contract.withdrawAll();
+await tx.wait();
+alert("Withdraw complete");
+}
+
+async function requestEmergency(){
+const tx = await contract.requestEmergencyWithdraw();
+await tx.wait();
+alert("Emergency requested");
+}
+
+async function cancelEmergency(){
+const tx = await contract.cancelEmergencyWithdraw();
+await tx.wait();
+alert("Emergency canceled");
+}
+
+async function executeEmergency(){
+const tx = await contract.executeEmergencyWithdraw();
+await tx.wait();
+alert("Emergency withdraw executed");
+}
+
+async function claimInheritance(){
+const tx = await contract.claimInheritance();
+await tx.wait();
+alert("Inheritance claimed");
+}
+
+async function depositToken(){
+
+const token = document.getElementById("tokenAddress").value;
+const amount = document.getElementById("tokenAmount").value;
+
+const tx = await contract.depositToken(token,amount);
+
+await tx.wait();
+
+alert("Token deposited");
+
+}
+
+</script></body>
+</html>
