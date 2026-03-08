@@ -2,177 +2,324 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VaultV2 Dashboard</title>
+<title>Vault V4 DeFi Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:20px}
+h1{margin-bottom:10px}
 button{padding:10px 14px;margin:5px;border:none;border-radius:6px;background:#2563eb;color:white;cursor:pointer}
 button:hover{background:#1d4ed8}
 .card{background:#1e293b;padding:16px;border-radius:10px;margin-bottom:15px}
 input{padding:8px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:white}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#0f172a;padding:10px;border-radius:8px}
+.big{font-size:22px;font-weight:bold}
+.notice{background:#7c2d12;padding:10px;border-radius:8px;margin-top:10px}
+ul{padding-left:20px}
 </style>
 </head>
-<body><h1>VaultV2 Monitor</h1><div class="card">
+<body><h1>Vault V4 Dashboard</h1><div class="card">
 <button onclick="connectWallet()">Connect Wallet</button>
 <p id="wallet"></p>
 </div><div class="card">
-<h3>Vault Info</h3>
-<p>Owner: <span id="owner"></span></p>
-<p>Heir: <span id="heir"></span></p>
-<p>Unlock Time: <span id="unlock"></span></p>
-<p>Last Activity: <span id="activity"></span></p>
-<p>Emergency Request: <span id="emergency"></span></p>
-<button onclick="loadData()">Refresh Data</button>
+<h3>Vault Status</h3>
+<div class="grid">
+<div class="stat">Owner<br><span id="owner"></span></div>
+<div class="stat">Heir<br><span id="heir"></span></div>
+<div class="stat">Unlock Time<br><span id="unlock"></span></div>
+<div class="stat">Last Activity<br><span id="activity"></span></div>
+<div class="stat">Emergency Request<br><span id="emergency"></span></div>
+<div class="stat">Unlock Countdown<br><span id="unlockCountdown" class="big"></span></div>
+<div class="stat">Emergency Countdown<br><span id="emergencyCountdown" class="big"></span></div>
+</div><div id="inheritNotice" class="notice" style="display:none">
+Inheritance may be claimable soon.
+</div><button onclick="loadData()">Refresh</button>
+
 </div><div class="card">
-<h3>Owner Actions</h3>
+<h3>Vault Value</h3>
+<p>Total Estimated USD: <span id="vaultValue" class="big"></span></p>
+<canvas id="chart"></canvas>
+</div><div class="card">
+<h3>Balances</h3>
+<p>BNB: <span id="bnbBalance"></span></p>
+<ul id="tokenList"></ul>
+</div><div class="card">
+<h3>Transaction History</h3>
+<ul id="txList"></ul>
+</div><div class="card">
+<h3>Owner Controls</h3>
 <button onclick="heartbeat()">Heartbeat</button>
 <button onclick="withdrawAll()">Withdraw All</button>
-<button onclick="requestEmergency()">Request Emergency Withdraw</button>
+<button onclick="requestEmergency()">Request Emergency</button>
 <button onclick="cancelEmergency()">Cancel Emergency</button>
-<button onclick="executeEmergency()">Execute Emergency Withdraw</button>
+<button onclick="executeEmergency()">Execute Emergency</button>
 </div><div class="card">
 <h3>Inheritance</h3>
 <button onclick="claimInheritance()">Claim Inheritance</button>
 </div><div class="card">
 <h3>Deposit Token</h3>
-<input id="tokenAddress" placeholder="Token Address">
+<input id="tokenAddress" placeholder="Token address">
 <input id="tokenAmount" placeholder="Amount (wei)">
 <button onclick="depositToken()">Deposit</button>
-</div><div class="card">
-<h3>Tracked Tokens</h3>
-<ul id="tokens"></ul>
 </div><script>
 
-const contractAddress = "PASTE_CONTRACT_ADDRESS_HERE";
+const contractAddress="PASTE_CONTRACT_ADDRESS_HERE";
 
-const abi = [
+const abi=[
 "function owner() view returns(address)",
 "function heir() view returns(address)",
 "function unlockTime() view returns(uint256)",
 "function lastActivity() view returns(uint256)",
 "function emergencyRequestTime() view returns(uint256)",
+"function getTrackedTokens() view returns(address[])",
 "function heartbeat()",
 "function withdrawAll()",
 "function requestEmergencyWithdraw()",
 "function cancelEmergencyWithdraw()",
 "function executeEmergencyWithdraw()",
 "function claimInheritance()",
-"function depositToken(address,uint256)",
-"function getTrackedTokens() view returns(address[])"
+"function depositToken(address,uint256)"
+];
+
+const erc20abi=[
+"function balanceOf(address) view returns(uint256)",
+"function symbol() view returns(string)"
 ];
 
 let provider;
 let signer;
 let contract;
+let chart;
 
 async function connectWallet(){
-
-if(!window.ethereum){
-alert("Install MetaMask");
-return;
-}
-
-provider = new ethers.BrowserProvider(window.ethereum);
+if(!window.ethereum){alert("Open in wallet browser");return}
+provider=new ethers.BrowserProvider(window.ethereum);
 await provider.send("eth_requestAccounts",[]);
+signer=await provider.getSigner();
+contract=new ethers.Contract(contractAddress,abi,signer);
 
-signer = await provider.getSigner();
+const addr=await signer.getAddress();
 
-contract = new ethers.Contract(contractAddress,abi,signer);
-
-const address = await signer.getAddress();
-
-document.getElementById("wallet").innerText = "Connected: " + address;
+document.getElementById("wallet").innerText="Connected: "+addr;
 
 loadData();
 
+setInterval(loadData,30000);
 }
 
 async function loadData(){
 
-const owner = await contract.owner();
-const heir = await contract.heir();
-const unlock = await contract.unlockTime();
-const activity = await contract.lastActivity();
-const emergency = await contract.emergencyRequestTime();
+const owner=await contract.owner();
+const heir=await contract.heir();
+const unlock=await contract.unlockTime();
+const activity=await contract.lastActivity();
+const emergency=await contract.emergencyRequestTime();
 
 
-document.getElementById("owner").innerText = owner;
-document.getElementById("heir").innerText = heir;
+document.getElementById("owner").innerText=owner;
+document.getElementById("heir").innerText=heir;
 
-document.getElementById("unlock").innerText = new Date(Number(unlock)*1000);
+document.getElementById("unlock").innerText=new Date(Number(unlock)*1000);
+document.getElementById("activity").innerText=new Date(Number(activity)*1000);
 
-document.getElementById("activity").innerText = new Date(Number(activity)*1000);
+document.getElementById("emergency").innerText=
+ emergency==0?"None":new Date(Number(emergency)*1000);
 
-document.getElementById("emergency").innerText = emergency==0 ? "None" : new Date(Number(emergency)*1000);
+startCountdown(unlock,"unlockCountdown");
 
-loadTokens();
+if(emergency>0){
+startCountdown(Number(emergency)+2592000,"emergencyCountdown");
+}
+
+checkInheritance(activity);
+
+loadBalances();
+loadTx();
+}
+
+function startCountdown(target,id){
+function tick(){
+const now=Math.floor(Date.now()/1000);
+let diff=target-now;
+if(diff<0) diff=0;
+
+const d=Math.floor(diff/86400);
+const h=Math.floor((diff%86400)/3600);
+const m=Math.floor((diff%3600)/60);
+const s=diff%60;
+
+const el=document.getElementById(id);
+if(el) el.innerText=`${d}d ${h}h ${m}m ${s}s`;
+}
+setInterval(tick,1000);
+tick();
+}
+
+function checkInheritance(lastActivity){
+
+const now=Math.floor(Date.now()/1000);
+const inactivity=180*24*3600;
+
+if(now>lastActivity+inactivity*0.9){
+
+document.getElementById("inheritNotice").style.display="block";
 
 }
 
-async function loadTokens(){
+}
 
-const tokens = await contract.getTrackedTokens();
+async function loadBalances(){
 
-const list = document.getElementById("tokens");
+const bnb=await provider.getBalance(contractAddress);
+
+const bnbFormatted=parseFloat(ethers.formatEther(bnb));
+
+document.getElementById("bnbBalance").innerText=bnbFormatted+" BNB";
+
+let totalUSD=0;
+
+const price=await fetchBNB();
+
+totalUSD+=bnbFormatted*price;
+
+const tokens=await contract.getTrackedTokens();
+
+const list=document.getElementById("tokenList");
 list.innerHTML="";
 
-for(let t of tokens){
+for(let addr of tokens){
+
+const token=new ethers.Contract(addr,erc20abi,provider);
+
+let symbol="TOKEN";
+
+try{symbol=await token.symbol()}catch{}
+
+const bal=await token.balanceOf(contractAddress);
+
+const amount=parseFloat(ethers.formatUnits(bal,18));
 
 const li=document.createElement("li");
-li.innerText=t;
+li.innerText=`${symbol}: ${amount}`;
+
+list.appendChild(li);
+
+}
+
+
+document.getElementById("vaultValue").innerText="$"+totalUSD.toFixed(2);
+
+updateChart(totalUSD);
+
+}
+
+async function fetchBNB(){
+
+try{
+const r=await fetch("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd");
+const j=await r.json();
+return j.binancecoin.usd;
+}catch{return 0}
+
+}
+
+function updateChart(v){
+
+const ctx=document.getElementById("chart");
+
+if(!chart){
+
+chart=new Chart(ctx,{type:"line",data:{labels:["start"],datasets:[{label:"Vault USD",data:[v]}]}});
+
+}else{
+
+chart.data.labels.push("update");
+chart.data.datasets[0].data.push(v);
+chart.update();
+
+}
+
+}
+
+async function loadTx(){
+
+const list=document.getElementById("txList");
+
+list.innerHTML="";
+
+try{
+
+const url=`https://api.bscscan.com/api?module=account&action=txlist&address=${contractAddress}&sort=desc`;
+
+const res=await fetch(url);
+
+const data=await res.json();
+
+if(data.result){
+
+const txs=data.result.slice(0,5);
+
+for(let tx of txs){
+
+const li=document.createElement("li");
+li.innerText=`${tx.hash.slice(0,10)}... value:${ethers.formatEther(tx.value)}`;
+
 list.appendChild(li);
 
 }
 
 }
 
+}catch{}
+
+}
+
 async function heartbeat(){
-const tx = await contract.heartbeat();
+const tx=await contract.heartbeat();
 await tx.wait();
 alert("Heartbeat sent");
 }
 
 async function withdrawAll(){
-const tx = await contract.withdrawAll();
+const tx=await contract.withdrawAll();
 await tx.wait();
 alert("Withdraw complete");
 }
 
 async function requestEmergency(){
-const tx = await contract.requestEmergencyWithdraw();
+const tx=await contract.requestEmergencyWithdraw();
 await tx.wait();
 alert("Emergency requested");
 }
 
 async function cancelEmergency(){
-const tx = await contract.cancelEmergencyWithdraw();
+const tx=await contract.cancelEmergencyWithdraw();
 await tx.wait();
 alert("Emergency canceled");
 }
 
 async function executeEmergency(){
-const tx = await contract.executeEmergencyWithdraw();
+const tx=await contract.executeEmergencyWithdraw();
 await tx.wait();
-alert("Emergency withdraw executed");
+alert("Emergency executed");
 }
 
 async function claimInheritance(){
-const tx = await contract.claimInheritance();
+const tx=await contract.claimInheritance();
 await tx.wait();
 alert("Inheritance claimed");
 }
 
 async function depositToken(){
+const token=document.getElementById("tokenAddress").value;
+const amount=document.getElementById("tokenAmount").value;
 
-const token = document.getElementById("tokenAddress").value;
-const amount = document.getElementById("tokenAmount").value;
-
-const tx = await contract.depositToken(token,amount);
+const tx=await contract.depositToken(token,amount);
 
 await tx.wait();
 
 alert("Token deposited");
-
 }
 
 </script></body>
