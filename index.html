@@ -1,380 +1,508 @@
-<!DOCTYPE html><html lang="en">
+<!DOCTYPE html>
+<html>
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vault V5 Professional Dashboard</title>
+<title>Vault Advanced Dashboard</title>
+
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.10.0/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <style>
-body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:20px}
-h1{margin-bottom:10px}
-button{padding:10px 14px;margin:5px;border:none;border-radius:6px;background:#2563eb;color:white;cursor:pointer}
-button:hover{background:#1d4ed8}
-.card{background:#1e293b;padding:16px;border-radius:10px;margin-bottom:15px}
-input{padding:8px;border-radius:6px;border:1px solid #334155;background:#0f172a;color:white;width:100%;margin-top:5px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.stat{background:#0f172a;padding:10px;border-radius:8px}
-.big{font-size:22px;font-weight:bold}
-ul{padding-left:20px}
+
+body{
+font-family:Arial;
+background:#0f172a;
+color:white;
+padding:20px
+}
+
+.card{
+background:#1e293b;
+padding:15px;
+border-radius:10px;
+margin-bottom:15px
+}
+
+button{
+padding:8px;
+margin:5px;
+background:#2563eb;
+color:white;
+border:none;
+border-radius:6px
+}
+
+.big{
+font-size:22px;
+font-weight:bold
+}
+
+.alert{
+background:#dc2626;
+padding:10px;
+border-radius:6px;
+margin-top:10px
+}
+
 </style>
+
 </head>
-<body><h1>Vault V5 Professional Dashboard</h1><div class="card">
+
+<body>
+
+<h1>Vault Dashboard</h1>
+
+<div class="card">
+
 <button onclick="connectWallet()">Connect Wallet</button>
+
 <p id="wallet"></p>
-</div><div class="card">
-<h3>Vault Status</h3>
-<div class="grid">
-<div class="stat">Owner<br><span id="owner"></span></div>
-<div class="stat">Heir<br><span id="heir"></span></div>
-<div class="stat">Unlock Time<br><span id="unlock"></span></div>
-<div class="stat">Last Activity<br><span id="activity"></span></div>
-<div class="stat">Emergency Request<br><span id="emergency"></span></div>
-<div class="stat">Unlock Countdown<br><span id="unlockCountdown" class="big"></span></div>
+
 </div>
-<button onclick="loadData()">Refresh</button>
-</div><div class="card">
-<h3>Total Vault Value</h3>
-<p class="big" id="vaultValue"></p>
-<canvas id="valueChart"></canvas>
-</div><div class="card">
+
+
+<div class="card">
+
+<h3>Vault Info</h3>
+
+<p>Owner: <span id="owner"></span></p>
+<p>Heir: <span id="heir"></span></p>
+<p>Guardian: <span id="guardian"></span></p>
+
+<div id="alert"></div>
+
+</div>
+
+
+<div class="card">
+
+<h3>Portfolio Value</h3>
+
+<p class="big">$<span id="portfolioValue">0</span></p>
+
+<canvas id="chart"></canvas>
+
+</div>
+
+
+<div class="card">
+
 <h3>Balances</h3>
-<p>BNB: <span id="bnbBalance"></span></p>
+
+<p>BNB: <span id="bnb"></span></p>
+
 <ul id="tokenList"></ul>
-<div id="untracked"></div>
-</div><div class="card">
-<h3>Deposit Token</h3>
-<input id="depositTokenAddress" placeholder="Token address">
-<input id="depositAmount" placeholder="Amount (wei)">
-<button onclick="depositToken()">Deposit Token</button>
-</div><div class="card">
-<h3>Owner Controls</h3>
-<button onclick="heartbeat()">Heartbeat</button>
-<button onclick="withdrawAll()">Withdraw All</button>
-<button onclick="requestEmergency()">Request Emergency</button>
-<button onclick="cancelEmergency()">Cancel Emergency</button>
-<button onclick="executeEmergency()">Execute Emergency</button>
-</div><div class="card">
-<h3>Guardian Controls</h3>
+
+</div>
+
+
+<div class="card">
+
+<h3>Detected Tokens</h3>
+
+<div id="detected"></div>
+
+</div>
+
+
+<div class="card">
+
+<h3>Guardian Dashboard</h3>
+
 <button onclick="freezeVault()">Freeze Vault</button>
 <button onclick="unfreezeVault()">Unfreeze Vault</button>
-<input id="recoverOwner" placeholder="New owner address">
-<button onclick="recoverOwner()">Recover Owner</button>
-</div><div class="card">
-<h3>Inheritance</h3>
-<button onclick="requestInheritance()">Request Inheritance</button>
-<button onclick="cancelInheritance()">Cancel Inheritance</button>
-<button onclick="executeInheritance()">Execute Inheritance</button>
-</div><div class="card">
-<h3>Transaction History</h3>
-<ul id="txHistory"></ul>
-</div><script>
 
-const contractAddress="PASTE_CONTRACT_ADDRESS_HERE";
+<input id="recoverOwner" placeholder="new owner">
+
+<button onclick="recoverOwner()">Recover Owner</button>
+
+</div>
+
+
+<div class="card">
+
+<h3>Inheritance Timer</h3>
+
+<p id="inheritTimer"></p>
+
+</div>
+
+
+<div class="card">
+
+<h3>Last 5 Transactions</h3>
+
+<ul id="txHistory"></ul>
+
+</div>
+
+
+
+<script>
+
+const contractAddress="PASTE_PROXY_ADDRESS_HERE"
 
 const abi=[
+
 "function owner() view returns(address)",
 "function heir() view returns(address)",
-"function unlockTime() view returns(uint256)",
+"function guardian() view returns(address)",
 "function lastActivity() view returns(uint256)",
-"function emergencyRequestTime() view returns(uint256)",
+"function inheritanceRequestTime() view returns(uint256)",
+
 "function getTrackedTokens() view returns(address[])",
-"function heartbeat()",
-"function withdrawAll()",
-"function requestEmergencyWithdraw()",
-"function cancelEmergencyWithdraw()",
-"function executeEmergencyWithdraw()",
-"function requestInheritance()",
-"function cancelInheritance()",
-"function executeInheritance()",
-"function depositToken(address,uint256)",
 "function trackToken(address)",
+
 "function freezeVault()",
 "function unfreezeVault()",
 "function recoverOwner(address)"
-];
+
+]
 
 const erc20abi=[
-"function balanceOf(address) view returns(uint256)",
-"function symbol() view returns(string)",
-"function decimals() view returns(uint8)"
-];
 
-let provider;
-let signer;
-let contract;
-let chart;
+"function symbol() view returns(string)",
+"function balanceOf(address) view returns(uint256)",
+"function decimals() view returns(uint8)"
+
+]
+
+
+let provider
+let signer
+let contract
+let chart
+
+
 
 async function connectWallet(){
-if(!window.ethereum){alert("Open in wallet browser");return}
-provider=new ethers.BrowserProvider(window.ethereum);
-await provider.send("eth_requestAccounts",[]);
-signer=await provider.getSigner();
-contract=new ethers.Contract(contractAddress,abi,signer);
 
-const addr=await signer.getAddress();
-document.getElementById("wallet").innerText="Connected: "+addr;
+provider=new ethers.BrowserProvider(window.ethereum)
 
-loadData();
-setInterval(loadData,30000);
+await provider.send("eth_requestAccounts",[])
+
+signer=await provider.getSigner()
+
+contract=new ethers.Contract(contractAddress,abi,signer)
+
+const addr=await signer.getAddress()
+
+document.getElementById("wallet").innerText=addr
+
+loadVault()
+
 }
 
-async function loadData(){
-
-const owner=await contract.owner();
-const heir=await contract.heir();
-const unlock=await contract.unlockTime();
-const activity=await contract.lastActivity();
-const emergency=await contract.emergencyRequestTime();
 
 
-document.getElementById("owner").innerText=owner;
-document.getElementById("heir").innerText=heir;
+async function loadVault(){
 
-document.getElementById("unlock").innerText=new Date(Number(unlock)*1000);
-document.getElementById("activity").innerText=new Date(Number(activity)*1000);
+const owner=await contract.owner()
+const heir=await contract.heir()
+const guardian=await contract.guardian()
 
-document.getElementById("emergency").innerText=
- emergency==0?"None":new Date(Number(emergency)*1000);
+document.getElementById("owner").innerText=owner
+document.getElementById("heir").innerText=heir
+document.getElementById("guardian").innerText=guardian
 
-startCountdown(unlock);
+checkInactivity()
 
-loadBalances();
-loadTx();
+const bnb=await provider.getBalance(contractAddress)
+
+document.getElementById("bnb").innerText=ethers.formatEther(bnb)
+
+await loadTokens()
+
+detectTokens()
+
+loadInheritanceTimer()
+
+loadTransactions()
+
 }
 
-function startCountdown(target){
-function tick(){
-const now=Math.floor(Date.now()/1000);
-let diff=target-now;
-if(diff<0) diff=0;
-
-const d=Math.floor(diff/86400);
-const h=Math.floor((diff%86400)/3600);
-const m=Math.floor((diff%3600)/60);
-const s=diff%60;
 
 
-document.getElementById("unlockCountdown").innerText=`${d}d ${h}h ${m}m ${s}s`;
+async function checkInactivity(){
+
+const last=await contract.lastActivity()
+
+const now=Math.floor(Date.now()/1000)
+
+const diff=now-last
+
+const sixMonths=15552000
+
+if(diff>sixMonths*0.8){
+
+document.getElementById("alert").innerHTML=
+
+"<div class='alert'>⚠ Owner inactivity approaching 6 months</div>"
+
 }
-setInterval(tick,1000);
-tick();
+
 }
 
-async function loadBalances(){
 
-const bnb=await provider.getBalance(contractAddress);
-const bnbFormatted=parseFloat(ethers.formatEther(bnb));
 
-document.getElementById("bnbBalance").innerText=bnbFormatted+" BNB";
+async function loadTokens(){
 
-let totalUSD=0;
+const tokens=await contract.getTrackedTokens()
 
-const bnbPrice=await getBNBPrice();
+let totalUSD=0
 
-totalUSD+=bnbFormatted*bnbPrice;
+const list=document.getElementById("tokenList")
 
-const tokens=await contract.getTrackedTokens();
-
-const list=document.getElementById("tokenList");
-list.innerHTML="";
+list.innerHTML=""
 
 for(let addr of tokens){
 
-const token=new ethers.Contract(addr,erc20abi,provider);
+const token=new ethers.Contract(addr,erc20abi,provider)
 
-let symbol="TOKEN";
-let decimals=18;
+let symbol="TOKEN"
+let decimals=18
 
 try{symbol=await token.symbol()}catch{}
 try{decimals=await token.decimals()}catch{}
 
-const bal=await token.balanceOf(contractAddress);
+const bal=await token.balanceOf(contractAddress)
 
-const amount=parseFloat(ethers.formatUnits(bal,decimals));
+const amount=parseFloat(ethers.formatUnits(bal,decimals))
 
-const li=document.createElement("li");
-li.innerText=`${symbol}: ${amount}`;
+const price=await getTokenPrice(symbol)
 
-list.appendChild(li);
+const value=amount*price
+
+totalUSD+=value
+
+const li=document.createElement("li")
+
+li.innerText=`${symbol} : ${amount} ($${value.toFixed(2)})`
+
+list.appendChild(li)
+
+}
+
+document.getElementById("portfolioValue").innerText=totalUSD.toFixed(2)
+
+updateChart(totalUSD)
 
 }
 
 
-document.getElementById("vaultValue").innerText="$"+totalUSD.toFixed(2);
 
-updateChart(totalUSD);
-
-autoDetectTokens(tokens);
-
-}
-
-async function autoDetectTokens(tracked){
-
-const trackedSet=new Set(tracked);
+async function getTokenPrice(symbol){
 
 try{
 
-const url=`https://api.bscscan.com/api?module=account&action=tokentx&address=${contractAddress}&sort=desc`;
+const res=await fetch("https://api.coingecko.com/api/v3/simple/price?ids="+symbol.toLowerCase()+"&vs_currencies=usd")
 
-const res=await fetch(url);
+const data=await res.json()
 
-const data=await res.json();
+return Object.values(data)[0].usd
 
-if(data.result){
+}catch{
 
-let detected=new Set();
+return 0
+
+}
+
+}
+
+
+
+async function detectTokens(){
+
+const tracked=await contract.getTrackedTokens()
+
+const trackedSet=new Set(tracked)
+
+const res=await fetch(
+
+"https://api.bscscan.com/api?module=account&action=tokentx&address="+contractAddress+"&sort=desc"
+
+)
+
+const data=await res.json()
+
+const div=document.getElementById("detected")
+
+div.innerHTML=""
+
+const detected=new Set()
 
 for(let tx of data.result){
-if(tx.contractAddress) detected.add(tx.contractAddress);
-}
 
-const container=document.getElementById("untracked");
-container.innerHTML="";
-
-for(let tokenAddr of detected){
-
-if(!trackedSet.has(tokenAddr)){
-
-const div=document.createElement("div");
-
-
-div.innerHTML=`New token detected:<br>${tokenAddr}<br><button onclick="trackToken('${tokenAddr}')">Track Token</button>`;
-
-container.appendChild(div);
+detected.add(tx.contractAddress)
 
 }
 
+for(let token of detected){
+
+if(!trackedSet.has(token)){
+
+const el=document.createElement("div")
+
+el.innerHTML=`
+
+${token}
+
+<button onclick="trackToken('${token}')">Track Token</button>
+
+`
+
+div.appendChild(el)
+
+}
+
 }
 
 }
 
-}catch{}
 
-}
 
 async function trackToken(addr){
-const tx=await contract.trackToken(addr);
-await tx.wait();
-alert("Token tracked");
-loadData();
+
+const tx=await contract.trackToken(addr)
+
+await tx.wait()
+
+loadVault()
+
 }
 
-async function depositToken(){
-const token=document.getElementById("depositTokenAddress").value;
-const amount=document.getElementById("depositAmount").value;
 
-const tx=await contract.depositToken(token,amount);
-await tx.wait();
 
-alert("Deposit complete");
-}
+function updateChart(value){
 
-async function heartbeat(){
-const tx=await contract.heartbeat();
-await tx.wait();
-}
-
-async function withdrawAll(){
-const tx=await contract.withdrawAll();
-await tx.wait();
-}
-
-async function requestEmergency(){
-const tx=await contract.requestEmergencyWithdraw();
-await tx.wait();
-}
-
-async function cancelEmergency(){
-const tx=await contract.cancelEmergencyWithdraw();
-await tx.wait();
-}
-
-async function executeEmergency(){
-const tx=await contract.executeEmergencyWithdraw();
-await tx.wait();
-}
-
-async function requestInheritance(){
-const tx=await contract.requestInheritance();
-await tx.wait();
-}
-
-async function cancelInheritance(){
-const tx=await contract.cancelInheritance();
-await tx.wait();
-}
-
-async function executeInheritance(){
-const tx=await contract.executeInheritance();
-await tx.wait();
-}
-
-async function freezeVault(){
-const tx=await contract.freezeVault();
-await tx.wait();
-}
-
-async function unfreezeVault(){
-const tx=await contract.unfreezeVault();
-await tx.wait();
-}
-
-async function recoverOwner(){
-const addr=document.getElementById("recoverOwner").value;
-const tx=await contract.recoverOwner(addr);
-await tx.wait();
-}
-
-async function getBNBPrice(){
-try{
-const r=await fetch("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd");
-const j=await r.json();
-return j.binancecoin.usd;
-}catch{return 0}
-}
-
-function updateChart(v){
-const ctx=document.getElementById("valueChart");
+const ctx=document.getElementById("chart")
 
 if(!chart){
-chart=new Chart(ctx,{type:"line",data:{labels:["start"],datasets:[{label:"Vault USD",data:[v]}]}});
+
+chart=new Chart(ctx,{
+type:"line",
+data:{
+labels:["start"],
+datasets:[{
+label:"Vault USD",
+data:[value]
+}]
 }
-else{
-chart.data.labels.push("update");
-chart.data.datasets[0].data.push(v);
-chart.update();
+})
+
+}else{
+
+chart.data.labels.push("update")
+chart.data.datasets[0].data.push(value)
+chart.update()
+
 }
+
 }
 
-async function loadTx(){
-const list=document.getElementById("txHistory");
-list.innerHTML="";
 
-try{
 
-const url=`https://api.bscscan.com/api?module=account&action=txlist&address=${contractAddress}&sort=desc`;
+async function loadInheritanceTimer(){
 
-const res=await fetch(url);
-const data=await res.json();
+const req=await contract.inheritanceRequestTime()
 
-if(data.result){
+if(req==0){
 
-const txs=data.result.slice(0,5);
+document.getElementById("inheritTimer").innerText="Not started"
+
+return
+
+}
+
+const target=req+2592000
+
+setInterval(()=>{
+
+const now=Math.floor(Date.now()/1000)
+
+let diff=target-now
+
+if(diff<0)diff=0
+
+const d=Math.floor(diff/86400)
+const h=Math.floor((diff%86400)/3600)
+
+document.getElementById("inheritTimer").innerText=
+
+d+" days "+h+" hours"
+
+},1000)
+
+}
+
+
+
+async function loadTransactions(){
+
+const res=await fetch(
+
+"https://api.bscscan.com/api?module=account&action=txlist&address="+contractAddress+"&sort=desc"
+
+)
+
+const data=await res.json()
+
+const list=document.getElementById("txHistory")
+
+list.innerHTML=""
+
+if(!data.result)return
+
+const txs=data.result.slice(0,5)
 
 for(let tx of txs){
 
-const li=document.createElement("li");
-li.innerText=`${tx.hash.slice(0,10)}... value:${ethers.formatEther(tx.value)}`;
+const li=document.createElement("li")
 
-list.appendChild(li);
+li.innerText=tx.hash.substring(0,10)+"... value "+ethers.formatEther(tx.value)
 
-}
-
-}
-
-}catch{}
+list.appendChild(li)
 
 }
 
-</script></body>
+}
+
+
+
+async function freezeVault(){
+
+const tx=await contract.freezeVault()
+
+await tx.wait()
+
+}
+
+
+
+async function unfreezeVault(){
+
+const tx=await contract.unfreezeVault()
+
+await tx.wait()
+
+}
+
+
+
+async function recoverOwner(){
+
+const addr=document.getElementById("recoverOwner").value
+
+const tx=await contract.recoverOwner(addr)
+
+await tx.wait()
+
+}
+
+</script>
+
+</body>
+
 </html>
