@@ -1,77 +1,259 @@
-<div class="card" style="display: flex; gap: 10px; background: #334155;">
-    <button onclick="exportData()" style="background: #059669; font-size: 13px;">💾 Backup Data (Unduh)</button>
-    <button onclick="document.getElementById('importFile').click()" style="background: #7c3aed; font-size: 13px;">📂 Restore Data (Upload)</button>
-    <input type="file" id="importFile" style="display:none" onchange="importData(event)">
-</div>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VaultPro DCA & Backup V7</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; max-width: 900px; margin: auto; padding: 15px; }
+        .card { background: #1e293b; padding: 20px; margin-top: 15px; border-radius: 12px; border: 1px solid #334155; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .stat-box { background: #0f172a; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #334155; }
+        .total-value { font-size: 32px; color: #38bdf8; font-weight: bold; text-align: center; margin: 10px 0; }
+        
+        button { width: 100%; padding: 10px; border: none; background: #2563eb; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        button:hover { opacity: 0.8; }
+        input { width: 100%; padding: 8px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 5px; box-sizing: border-box; }
+        
+        table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 0.85em; }
+        th { text-align: left; color: #94a3b8; padding-bottom: 10px; }
+        td { padding: 10px 5px; border-bottom: 1px solid #334155; }
+        
+        .input-group { display: flex; gap: 4px; margin-top: 5px; }
+        .btn-add { width: 35px; background: #22c55e; padding: 5px; }
+        .profit { color: #22c55e; font-weight: bold; }
+        .loss { color: #ef4444; font-weight: bold; }
+        .small-text { font-size: 0.75em; color: #94a3b8; }
+        .flex-row { display: flex; gap: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <div style="text-align: center; color: #94a3b8; font-size: 0.9em;">Estimasi Portofolio (BNB + Token)</div>
+        <div class="total-value" id="grandTotalUSD">$0.00</div>
+        
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="small-text">Total Profit/Loss</div>
+                <div id="totalPL" style="font-size: 1.1em;">$0.00 (0%)</div>
+            </div>
+            <div class="stat-box">
+                <div class="small-text">Harga BNB</div>
+                <div id="bnbPriceDisplay" style="font-size: 1.1em;">$0.00</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <input id="vaultAddress" value="0x93C7d56BB62fFE993135f86C4BdD69c41D302b46" style="margin-bottom: 10px;">
+        <button id="connectBtn">Connect Wallet & Sync</button>
+        <div id="walletStatus" class="small-text" style="text-align: center; margin-top: 5px;">Status: Terputus</div>
+        
+        <div class="flex-row" style="margin-top: 15px;">
+            <button onclick="exportData()" style="background: #059669; font-size: 12px;">💾 Backup Modal</button>
+            <button onclick="document.getElementById('importFile').click()" style="background: #7c3aed; font-size: 12px;">📂 Restore Modal</button>
+            <input type="file" id="importFile" style="display:none" onchange="importData(event)">
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Track Token Baru</h3>
+        <div class="input-group">
+            <input id="newTokenAddr" placeholder="Alamat Kontrak BEP-20 (Contoh: Doge)">
+            <button onclick="trackNewToken()" style="width: 120px; background: #0ea5e9;">Track</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>Daftar Aset & Performa</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Aset</th>
+                    <th>Saldo</th>
+                    <th>Input Beli Baru</th>
+                    <th>Profit/Loss</th>
+                </tr>
+            </thead>
+            <tbody id="tokenTable"></tbody>
+        </table>
+        <div id="lastUpdate" class="small-text" style="margin-top: 15px; text-align: center;">Auto-refresh: 1 Jam</div>
+    </div>
 
 <script>
-// ... (Gunakan variabel portfolioMeta dari kode sebelumnya) ...
+let provider, signer, vault;
+let prices = { bnb: 0, usdt: 1, doge: 0 };
+let portfolioMeta = JSON.parse(localStorage.getItem('vault_dca_meta')) || {};
 
-/**
- * FITUR BACKUP (DOWNLOAD FILE)
- */
-function exportData() {
-    const dataStr = JSON.stringify(portfolioMeta, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
-    const exportFileDefaultName = 'vault_portfolio_backup_' + new Date().toISOString().slice(0,10) + '.json';
-    
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
+const vaultAbi = [
+    "function trackedTokens(uint256) view returns(address)",
+    "function trackToken(address token)",
+    "function unlockTime() view returns(uint256)",
+    "function emergencyRequested() view returns(bool)"
+];
+
+const erc20Abi = [
+    "function balanceOf(address) view returns(uint256)",
+    "function decimals() view returns(uint8)",
+    "function symbol() view returns(string)"
+];
+
+async function fetchPrices() {
+    try {
+        const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin,tether,dogecoin&vs_currencies=usd");
+        const data = await res.json();
+        prices.bnb = data.binancecoin.usd;
+        prices.usdt = data.tether.usd;
+        prices.doge = data.dogecoin.usd;
+        document.getElementById("bnbPriceDisplay").innerText = "$" + prices.bnb;
+    } catch (e) { console.error("Harga gagal dimuat"); }
 }
 
-/**
- * FITUR RESTORE (UPLOAD FILE)
- */
+async function connectWallet() {
+    const injected = window.ethereum || window.BinanceChain;
+    if (!injected) return alert("Buka di Browser Wallet");
+    await injected.request({ method: "eth_requestAccounts" });
+    provider = new window.ethers.BrowserProvider(injected);
+    signer = await provider.getSigner();
+    document.getElementById("walletStatus").innerText = "Terhubung: " + await signer.getAddress();
+    await fetchPrices();
+    initVault();
+}
+
+function initVault() {
+    const addr = document.getElementById("vaultAddress").value.trim();
+    vault = new window.ethers.Contract(addr, vaultAbi, signer);
+    refreshUI();
+}
+
+async function refreshUI() {
+    if(!vault) return;
+    const table = document.getElementById("tokenTable");
+    table.innerHTML = "<tr><td colspan='4'>Loading Data...</td></tr>";
+    
+    const vaultAddr = await vault.getAddress();
+    const bnbBal = await provider.getBalance(vaultAddr);
+    const bnbAmount = parseFloat(window.ethers.formatEther(bnbBal));
+    
+    let tokens = [];
+    let i = 0;
+    while (i < 30) {
+        try { tokens.push(await vault.trackedTokens(i)); i++; } 
+        catch (e) { break; }
+    }
+
+    table.innerHTML = "";
+    addDcaRow("BNB", bnbAmount, prices.bnb, "BNB");
+
+    let totalVal = bnbAmount * prices.bnb;
+    let totalInv = (portfolioMeta["BNB"]?.avg || 0) * bnbAmount;
+
+    for (const addr of tokens) {
+        try {
+            const tContract = new window.ethers.Contract(addr, erc20Abi, provider);
+            const [sym, dec, bal] = await Promise.all([tContract.symbol(), tContract.decimals(), tContract.balanceOf(vaultAddr)]);
+            const amount = parseFloat(window.ethers.formatUnits(bal, dec));
+            let currPrice = sym.includes("USD") ? prices.usdt : (sym.includes("DOGE") ? prices.doge : 0);
+            
+            addDcaRow(sym, amount, currPrice, addr);
+            totalVal += (amount * currPrice);
+            totalInv += ((portfolioMeta[addr]?.avg || 0) * amount);
+        } catch (e) {}
+    }
+    
+    updateOverallStats(totalVal, totalInv);
+    document.getElementById("lastUpdate").innerText = "Terakhir Update: " + new Date().toLocaleTimeString();
+}
+
+function addDcaRow(symbol, amount, currentPrice, id) {
+    const meta = portfolioMeta[id] || { totalSpent: 0, totalQty: 0, avg: 0 };
+    const table = document.getElementById("tokenTable");
+    
+    const diff = (amount * currentPrice) - (amount * meta.avg);
+    const percent = meta.avg > 0 ? (diff / (amount * meta.avg)) * 100 : 0;
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+        <td><b>${symbol}</b><br><span class="small-text">Avg: $${meta.avg.toFixed(4)}</span></td>
+        <td>${amount.toFixed(3)}</td>
+        <td>
+            <div class="input-group">
+                <input type="number" id="qty-${id}" placeholder="Qty">
+                <input type="number" id="prc-${id}" placeholder="Price">
+                <button class="btn-add" onclick="recordTrade('${id}', '${symbol}')">+</button>
+            </div>
+            <span class="small-text" style="cursor:pointer; color:#ef4444;" onclick="resetTrade('${id}')">Reset Modal</span>
+        </td>
+        <td class="${diff >= 0 ? 'profit' : 'loss'}">
+            $${diff.toFixed(2)}<br><span style="font-size:0.8em">${percent.toFixed(2)}%</span>
+        </td>
+    `;
+    table.appendChild(row);
+}
+
+function recordTrade(id, symbol) {
+    const q = parseFloat(document.getElementById(`qty-${id}`).value);
+    const p = parseFloat(document.getElementById(`prc-${id}`).value);
+    if (q > 0 && p > 0) {
+        if (!portfolioMeta[id]) portfolioMeta[id] = { totalSpent: 0, totalQty: 0, avg: 0 };
+        portfolioMeta[id].totalSpent += (q * p);
+        portfolioMeta[id].totalQty += q;
+        portfolioMeta[id].avg = portfolioMeta[id].totalSpent / portfolioMeta[id].totalQty;
+        localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
+        refreshUI();
+    }
+}
+
+function updateOverallStats(current, invested) {
+    document.getElementById("grandTotalUSD").innerText = "$" + current.toLocaleString(undefined, {minimumFractionDigits: 2});
+    const plBox = document.getElementById("totalPL");
+    const diff = current - invested;
+    const percent = invested > 0 ? (diff / invested) * 100 : 0;
+    plBox.className = diff >= 0 ? "profit" : "loss";
+    plBox.innerText = `${diff >= 0 ? '+' : ''}$${diff.toFixed(2)} (${percent.toFixed(2)}%)`;
+}
+
+function exportData() {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(portfolioMeta));
+    const dlAnchorElem = document.createElement('a');
+    dlAnchorElem.setAttribute("href", dataStr);
+    dlAnchorElem.setAttribute("download", "vault_backup.json");
+    dlAnchorElem.click();
+}
+
 function importData(event) {
     const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const importedData = JSON.parse(e.target.result);
-            
-            // Validasi sederhana
-            if (typeof importedData === 'object') {
-                portfolioMeta = importedData;
-                localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
-                alert("✅ Data berhasil dipulihkan! Dashboard akan memuat ulang.");
-                location.reload();
-            }
-        } catch (err) {
-            alert("❌ File tidak valid atau rusak.");
-        }
+    reader.onload = (e) => {
+        portfolioMeta = JSON.parse(e.target.result);
+        localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
+        refreshUI();
+        alert("Data Restored!");
     };
     reader.readAsText(event.target.files[0]);
 }
 
-/**
- * LOGIKA PENJUMLAHAN TOTAL (OPTIMASI)
- */
-function updateTotals() {
-    const rows = document.querySelectorAll("#tokenTable tr");
-    let grandTotalCurrent = 0;
-    let grandTotalInvested = 0;
-
-    rows.forEach(row => {
-        const symbol = row.cells[0].innerText.split("\n")[0];
-        const amount = parseFloat(row.cells[1].innerText);
-        const id = row.querySelector("button").getAttribute("onclick").split("'")[1];
-        
-        const meta = portfolioMeta[id] || { avg: 0 };
-        let currPrice = (symbol === "BNB") ? prices.bnb : (symbol.includes("USD") ? prices.usdt : (symbol.includes("DOGE") ? prices.doge : 0));
-        
-        grandTotalCurrent += (amount * currPrice);
-        grandTotalInvested += (amount * meta.avg);
-    });
-
-    document.getElementById("grandTotalUSD").innerText = "$" + grandTotalCurrent.toLocaleString(undefined, {minimumFractionDigits: 2});
-    
-    const plBox = document.getElementById("totalPL");
-    const diff = grandTotalCurrent - grandTotalInvested;
-    const percent = grandTotalInvested > 0 ? (diff / grandTotalInvested) * 100 : 0;
-    
-    plBox.className = diff >= 0 ? "profit" : "loss";
-    plBox.innerText = `${diff >= 0 ? '+' : ''}$${diff.toFixed(2)} (${percent.toFixed(2)}%)`;
+async function trackNewToken() {
+    const addr = document.getElementById("newTokenAddr").value;
+    if(!window.ethers.isAddress(addr)) return alert("Alamat tidak valid");
+    try {
+        const tx = await vault.trackToken(addr);
+        await tx.wait();
+        refreshUI();
+    } catch (e) { alert(e.message); }
 }
+
+function resetTrade(id) {
+    if(confirm("Reset history modal?")) {
+        delete portfolioMeta[id];
+        localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
+        refreshUI();
+    }
+}
+
+setInterval(() => { if(signer) refreshUI(); }, 3600000);
+document.getElementById("connectBtn").onclick = connectWallet;
 </script>
+</body>
+</html>
