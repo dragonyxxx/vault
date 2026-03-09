@@ -1,201 +1,77 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultPro Dashboard V5 - PRO</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: white; max-width: 800px; margin: auto; padding: 20px; }
-        .card { background: #1e293b; padding: 20px; margin-top: 20px; border-radius: 12px; border: 1px solid #334155; position: relative; }
-        .total-value { font-size: 24px; color: #22c55e; font-weight: bold; margin-bottom: 10px; }
-        h2, h3 { color: #38bdf8; margin-top: 0; }
-        button { width: 100%; padding: 12px; margin-top: 10px; border: none; background: #2563eb; color: white; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #1d4ed8; }
-        input { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #334155; background: #0f172a; color: white; border-radius: 8px; box-sizing: border-box; }
-        table { width: 100%; margin-top: 15px; border-collapse: collapse; }
-        td, th { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
-        .status-msg { margin-top: 10px; font-size: 0.85em; color: #94a3b8; }
-        .badge { background: #334155; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; }
-        #lastUpdate { font-style: italic; font-size: 0.8em; color: #64748b; }
-    </style>
-</head>
-<body>
-
-    <div class="card" style="text-align: center; border-bottom: 4px solid #22c55e;">
-        <div style="font-size: 0.9em; color: #94a3b8;">Total Estimasi Nilai Aset</div>
-        <div class="total-value" id="grandTotalUSD">$0.00</div>
-        <div id="lastUpdate">Auto-refresh: Aktif (1 Jam)</div>
-    </div>
-
-    <div class="card">
-        <label>Vault Address</label>
-        <input id="vaultAddress" placeholder="0x..." value="0x93C7d56BB62fFE993135f86C4BdD69c41D302b46">
-        <button id="connectBtn">Hubungkan Wallet</button>
-        <div id="walletStatus" class="status-msg">Status: Belum Terhubung</div>
-    </div>
-
-    <div class="card">
-        <h3>Info Saldo & Waktu</h3>
-        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-            <span>BNB: <b id="bnb">0</b></span>
-            <span id="bnbValueUSD" class="badge">$0.00</span>
-        </div>
-        <div>Unlock Time: <span id="unlock">-</span></div>
-        <div>Emergency Status: <span id="emergency">-</span></div>
-    </div>
-
-    <div class="card">
-        <h3>Track Token Baru</h3>
-        <input id="tokenAddress" placeholder="Alamat Kontrak Token (BEP-20)">
-        <button id="trackTokenBtn" style="background:#0ea5e9">Track Token</button>
-    </div>
-
-    <div class="card">
-        <h3>Aset Terdaftar</h3>
-        <table>
-            <thead><tr><th>Token</th><th>Saldo</th><th>Nilai (USD)</th></tr></thead>
-            <tbody id="tokenTable"></tbody>
-        </table>
-    </div>
+<div class="card" style="display: flex; gap: 10px; background: #334155;">
+    <button onclick="exportData()" style="background: #059669; font-size: 13px;">💾 Backup Data (Unduh)</button>
+    <button onclick="document.getElementById('importFile').click()" style="background: #7c3aed; font-size: 13px;">📂 Restore Data (Upload)</button>
+    <input type="file" id="importFile" style="display:none" onchange="importData(event)">
+</div>
 
 <script>
-let provider, signer, vault, userAddress;
-let prices = { bnb: 0, usdt: 1 }; // Default prices
+// ... (Gunakan variabel portfolioMeta dari kode sebelumnya) ...
 
-const vaultAbi = [
-    "function owner() view returns(address)",
-    "function unlockTime() view returns(uint256)",
-    "function emergencyRequested() view returns(bool)",
-    "function trackedTokens(uint256) view returns(address)",
-    "function trackToken(address token)"
-];
-
-const erc20Abi = [
-    "function balanceOf(address) view returns(uint256)",
-    "function decimals() view returns(uint8)",
-    "function symbol() view returns(string)"
-];
-
-// 1. AMBIL HARGA DARI COINGECKO
-async function fetchPrices() {
-    try {
-        const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin,tether&vs_currencies=usd");
-        const data = await res.json();
-        prices.bnb = data.binancecoin.usd;
-        prices.usdt = data.tether.usd;
-    } catch (e) {
-        console.error("Gagal ambil harga, menggunakan estimasi.");
-        prices.bnb = 600; // Harga backup jika API limit
-    }
-}
-
-async function connectWallet() {
-    const injected = window.ethereum || window.BinanceChain;
-    if (!injected) return alert("Gunakan Binance/MetaMask browser");
-    await injected.request({ method: "eth_requestAccounts" });
-    provider = new window.ethers.BrowserProvider(injected);
-    signer = await provider.getSigner();
-    userAddress = await signer.getAddress();
-    document.getElementById("walletStatus").innerText = "Terhubung: " + userAddress;
+/**
+ * FITUR BACKUP (DOWNLOAD FILE)
+ */
+function exportData() {
+    const dataStr = JSON.stringify(portfolioMeta, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
     
-    await fetchPrices();
-    initVault();
-}
-
-async function initVault() {
-    const addr = document.getElementById("vaultAddress").value.trim();
-    vault = new window.ethers.Contract(addr, vaultAbi, signer);
-    refreshData();
-}
-
-async function refreshData() {
-    if (!vault) return;
-    try {
-        const addr = await vault.getAddress();
-        const [unlock, emergency, bnbBal] = await Promise.all([
-            vault.unlockTime(),
-            vault.emergencyRequested(),
-            provider.getBalance(addr)
-        ]);
-
-        const bnbAmount = parseFloat(window.ethers.formatEther(bnbBal));
-        const bnbUsd = bnbAmount * prices.bnb;
-
-        document.getElementById("unlock").innerText = new Date(Number(unlock) * 1000).toLocaleString();
-        document.getElementById("emergency").innerText = emergency ? "AKTIF" : "Tidak Aktif";
-        document.getElementById("bnb").innerText = bnbAmount.toFixed(4);
-        document.getElementById("bnbValueUSD").innerText = "$" + bnbUsd.toLocaleString();
-
-        await loadTokens(bnbUsd);
-        document.getElementById("lastUpdate").innerText = "Terakhir Update: " + new Date().toLocaleTimeString();
-    } catch (e) { console.error(e); }
-}
-
-async function loadTokens(initialUsdValue) {
-    const table = document.getElementById("tokenTable");
-    table.innerHTML = "";
+    const exportFileDefaultName = 'vault_portfolio_backup_' + new Date().toISOString().slice(0,10) + '.json';
     
-    let tokens = [];
-    let i = 0;
-    while (i < 50) { // Limit 50 token prevent infinite
-        try {
-            const tokenAddr = await vault.trackedTokens(i);
-            tokens.push(tokenAddr);
-            i++;
-        } catch (e) { break; }
-    }
-
-    let totalTokensUSD = 0;
-    const vaultAddr = await vault.getAddress();
-
-    for (const addr of tokens) {
-        try {
-            const tContract = new window.ethers.Contract(addr, erc20Abi, provider);
-            const [sym, dec, bal] = await Promise.all([
-                tContract.symbol(),
-                tContract.decimals(),
-                tContract.balanceOf(vaultAddr)
-            ]);
-            
-            const amount = parseFloat(window.ethers.formatUnits(bal, dec));
-            
-            // Logika harga sederhana: Jika USDT/BUSD/USDC anggap $1, selain itu (simulasi)
-            let price = (sym.includes("USD")) ? prices.usdt : 0; 
-            let usdValue = amount * price;
-            totalTokensUSD += usdValue;
-
-            table.innerHTML += `<tr>
-                <td>${sym}<br><small>${addr.substring(0,10)}...</small></td>
-                <td>${amount.toFixed(2)}</td>
-                <td>$${usdValue.toLocaleString()}</td>
-            </tr>`;
-        } catch (err) { console.error(err); }
-    }
-
-    const grandTotal = initialUsdValue + totalTokensUSD;
-    document.getElementById("grandTotalUSD").innerText = "$" + grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
 }
 
-// AUTO REFRESH SETIAP 1 JAM (3600000 ms)
-setInterval(async () => {
-    console.log("Auto-refreshing data...");
-    await fetchPrices();
-    refreshData();
-}, 3600000);
+/**
+ * FITUR RESTORE (UPLOAD FILE)
+ */
+function importData(event) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedData = JSON.parse(e.target.result);
+            
+            // Validasi sederhana
+            if (typeof importedData === 'object') {
+                portfolioMeta = importedData;
+                localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
+                alert("✅ Data berhasil dipulihkan! Dashboard akan memuat ulang.");
+                location.reload();
+            }
+        } catch (err) {
+            alert("❌ File tidak valid atau rusak.");
+        }
+    };
+    reader.readAsText(event.target.files[0]);
+}
 
-document.getElementById("connectBtn").onclick = connectWallet;
+/**
+ * LOGIKA PENJUMLAHAN TOTAL (OPTIMASI)
+ */
+function updateTotals() {
+    const rows = document.querySelectorAll("#tokenTable tr");
+    let grandTotalCurrent = 0;
+    let grandTotalInvested = 0;
 
-document.getElementById("trackTokenBtn").onclick = async () => {
-    const addr = document.getElementById("tokenAddress").value;
-    if (!window.ethers.isAddress(addr)) return alert("Alamat token tidak valid");
-    try {
-        const tx = await vault.trackToken(addr);
-        await tx.wait();
-        alert("Token berhasil didaftarkan!");
-        refreshData();
-    } catch (e) { alert("Gagal: " + e.message); }
-};
+    rows.forEach(row => {
+        const symbol = row.cells[0].innerText.split("\n")[0];
+        const amount = parseFloat(row.cells[1].innerText);
+        const id = row.querySelector("button").getAttribute("onclick").split("'")[1];
+        
+        const meta = portfolioMeta[id] || { avg: 0 };
+        let currPrice = (symbol === "BNB") ? prices.bnb : (symbol.includes("USD") ? prices.usdt : (symbol.includes("DOGE") ? prices.doge : 0));
+        
+        grandTotalCurrent += (amount * currPrice);
+        grandTotalInvested += (amount * meta.avg);
+    });
+
+    document.getElementById("grandTotalUSD").innerText = "$" + grandTotalCurrent.toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    const plBox = document.getElementById("totalPL");
+    const diff = grandTotalCurrent - grandTotalInvested;
+    const percent = grandTotalInvested > 0 ? (diff / grandTotalInvested) * 100 : 0;
+    
+    plBox.className = diff >= 0 ? "profit" : "loss";
+    plBox.innerText = `${diff >= 0 ? '+' : ''}$${diff.toFixed(2)} (${percent.toFixed(2)}%)`;
+}
 </script>
-</body>
-</html>
