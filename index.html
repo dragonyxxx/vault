@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>VaultPro Dashboard</title>
 
-<script src="https://unpkg.com/ethers@5.7.2/dist/ethers.min.js"></script>
+<script src="ethers.min.js"></script>
 
 <style>
 
@@ -22,17 +22,6 @@ background:#1e293b;
 padding:20px;
 margin-top:20px;
 border-radius:10px;
-}
-
-button{
-width:100%;
-padding:12px;
-margin-top:10px;
-border:none;
-background:#2563eb;
-color:white;
-font-size:16px;
-border-radius:6px;
 }
 
 input{
@@ -69,11 +58,11 @@ font-weight:bold;
 <div class="card">
 
 <label>Vault Address</label>
-<input id="vaultAddress" placeholder="0x...">
+<input id="vaultAddress" value="0x93C7d56BB62FFE993135f86C4BdD69c41D302b46">
 
-<button id="connectWallet">Connect Wallet</button>
-
-<div id="walletStatus" class="status"></div>
+<div id="walletStatus" class="status">
+Detecting wallet...
+</div>
 
 </div>
 
@@ -85,58 +74,9 @@ font-weight:bold;
 <div>Owner: <span id="owner">-</span></div>
 <div>Unlock Time: <span id="unlock">-</span></div>
 <div>Emergency Requested: <span id="emergency">-</span></div>
-<div>Emergency Ready In: <span id="countdown">-</span></div>
 <div>BNB Balance: <span id="bnb">0</span></div>
-<div>Total Tokens: <span id="tokencount">0</span></div>
 
 </div>
-
-
-<div class="card">
-
-<h3>Track Token</h3>
-
-<input id="tokenAddress" placeholder="0xToken">
-
-<button id="trackTokenBtn">Track Token</button>
-
-</div>
-
-
-<div class="card">
-
-<h3>Emergency</h3>
-
-<button id="requestEmergency">Request Emergency</button>
-
-<button id="cancelEmergency">Cancel Emergency</button>
-
-<button id="executeAll">Execute Emergency (All Tokens)</button>
-
-<div id="txStatus" class="status"></div>
-
-</div>
-
-
-<div class="card">
-
-<h3>Tracked Tokens</h3>
-
-<table>
-
-<thead>
-<tr>
-<th>Token</th>
-<th>Balance</th>
-</tr>
-</thead>
-
-<tbody id="tokenTable"></tbody>
-
-</table>
-
-</div>
-
 
 <script>
 
@@ -145,58 +85,49 @@ let signer
 let vault
 let userAddress
 
-
 const vaultAbi=[
 
 "function owner() view returns(address)",
 "function unlockTime() view returns(uint256)",
-"function emergencyRequested() view returns(bool)",
-"function emergencyWithdrawRequestTime() view returns(uint256)",
-
-"function trackedTokens(uint256) view returns(address)",
-"function trackedTokensLength() view returns(uint256)",
-
-"function requestEmergency()",
-"function cancelEmergency()",
-"function executeEmergency(address[] tokens)",
-"function trackToken(address token)"
-
-]
-
-const erc20Abi=[
-
-"function balanceOf(address) view returns(uint256)",
-"function decimals() view returns(uint8)",
-"function symbol() view returns(string)"
+"function emergencyRequested() view returns(bool)"
 
 ]
 
 
-
-async function connectWallet(){
+async function autoConnect(){
 
 try{
 
 let injectedProvider=null
 
-if(window.ethereum){
-injectedProvider=window.ethereum
+// detect Binance wallet
+if(window.BinanceChain){
+
+injectedProvider=window.BinanceChain
+
 }
 
-else if(window.BinanceChain){
-injectedProvider=window.BinanceChain
+// detect metamask
+else if(window.ethereum){
+
+injectedProvider=window.ethereum
+
 }
 
 else{
-alert("Wallet tidak terdeteksi")
+
+document.getElementById("walletStatus").innerHTML=
+"Wallet tidak terdeteksi"
+
 return
+
 }
+
+provider=new ethers.providers.Web3Provider(injectedProvider)
 
 await injectedProvider.request({
 method:"eth_requestAccounts"
 })
-
-provider=new ethers.providers.Web3Provider(injectedProvider)
 
 signer=provider.getSigner()
 
@@ -205,37 +136,21 @@ userAddress=await signer.getAddress()
 document.getElementById("walletStatus").innerHTML=
 "Connected: "+userAddress
 
-const network=await provider.getNetwork()
-
-if(network.chainId!==56){
-alert("Switch ke BNB Smart Chain")
-}
-
 initVault()
 
 }catch(e){
 
-alert(e.message)
+document.getElementById("walletStatus").innerHTML=e.message
 
 }
 
 }
-
-document.getElementById("connectWallet").onclick=connectWallet
 
 
 
 async function initVault(){
 
 const addr=document.getElementById("vaultAddress").value.trim()
-
-if(!ethers.utils.isAddress(addr)){
-
-alert("Invalid address")
-
-return
-
-}
 
 vault=new ethers.Contract(addr,vaultAbi,signer)
 
@@ -260,151 +175,15 @@ const emergency=await vault.emergencyRequested()
 
 document.getElementById("emergency").innerHTML=emergency
 
-const reqTime=await vault.emergencyWithdrawRequestTime()
-
-updateCountdown(reqTime)
-
 const bnb=await provider.getBalance(vault.address)
 
 document.getElementById("bnb").innerHTML=
-parseFloat(ethers.utils.formatEther(bnb)).toFixed(4)
-
-loadTokens()
+ethers.utils.formatEther(bnb)
 
 }
 
 
-
-async function loadTokens(){
-
-const count=await vault.trackedTokensLength()
-
-document.getElementById("tokencount").innerHTML=count
-
-const table=document.getElementById("tokenTable")
-
-table.innerHTML=""
-
-for(let i=0;i<count;i++){
-
-const addr=await vault.trackedTokens(i)
-
-const token=new ethers.Contract(addr,erc20Abi,provider)
-
-let symbol="TOKEN"
-let decimals=18
-
-try{
-
-symbol=await token.symbol()
-decimals=await token.decimals()
-
-}catch{}
-
-const bal=await token.balanceOf(vault.address)
-
-const amount=ethers.utils.formatUnits(bal,decimals)
-
-table.innerHTML+=`<tr><td>${symbol}<br>${addr}</td><td>${parseFloat(amount).toFixed(4)}</td></tr>`
-
-}
-
-}
-
-
-
-function updateCountdown(reqTime){
-
-setInterval(()=>{
-
-const now=Math.floor(Date.now()/1000)
-
-const ready=reqTime+60*24*3600
-
-const left=ready-now
-
-if(left<=0){
-
-document.getElementById("countdown").innerHTML="READY"
-
-}else{
-
-document.getElementById("countdown").innerHTML=
-Math.floor(left/3600)+"h "+Math.floor((left%3600)/60)+"m"
-
-}
-
-},1000)
-
-}
-
-
-
-async function sendTx(fn,args=[]){
-
-try{
-
-const tx=await vault[fn](...args)
-
-document.getElementById("txStatus").innerHTML="Tx sent"
-
-await tx.wait()
-
-document.getElementById("txStatus").innerHTML="Tx confirmed"
-
-loadVault()
-
-}catch(e){
-
-document.getElementById("txStatus").innerHTML=e.message
-
-}
-
-}
-
-
-
-document.getElementById("requestEmergency").onclick=
-()=>sendTx("requestEmergency")
-
-document.getElementById("cancelEmergency").onclick=
-()=>sendTx("cancelEmergency")
-
-
-
-document.getElementById("executeAll").onclick=async()=>{
-
-const count=await vault.trackedTokensLength()
-
-let tokens=[]
-
-for(let i=0;i<count;i++){
-
-tokens.push(await vault.trackedTokens(i))
-
-}
-
-sendTx("executeEmergency",[tokens])
-
-}
-
-
-
-document.getElementById("trackTokenBtn").onclick=()=>{
-
-const addr=document.getElementById("tokenAddress").value
-
-if(!ethers.utils.isAddress(addr)){
-
-alert("invalid token")
-
-return
-
-}
-
-sendTx("trackToken",[addr])
-
-}
+autoConnect()
 
 </script>
 
