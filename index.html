@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultPro Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.3/dist/ethers.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
 <style>
 body { font-family: Arial, sans-serif; max-width: 700px; margin: 50px auto; }
 input, button { padding: 10px; margin: 5px 0; width: 100%; }
@@ -21,10 +22,11 @@ th { background-color: #eee; }
 <label>Vault Contract Address:</label>
 <input type="text" id="contractAddress" placeholder="0x93C7d56BB62fFE993135f86C4BdD69c41D302b46">
 
-<label>Ethereum / BSC RPC URL</label>
+<label>Optional RPC URL (BSC, ETH etc.)</label>
 <input type="text" id="rpcUrl" placeholder="https://bsc-dataseed.binance.org/">
 
-<button id="connectBtn">Connect Wallet</button>
+<button id="connectMetaMaskBtn">Connect MetaMask</button>
+<button id="connectWalletConnectBtn">Connect WalletConnect</button>
 <div id="walletStatus" class="status"></div>
 
 <hr>
@@ -69,7 +71,7 @@ th { background-color: #eee; }
 </table>
 
 <script>
-let provider, signer, vault;
+let provider, signer, vault, wcProvider;
 
 const vaultAbi = [
     "function requestEmergency() external",
@@ -91,26 +93,38 @@ const erc20Abi = [
     "function symbol() view returns (string)"
 ];
 
-async function connectVault() {
+// --- Connect MetaMask ---
+document.getElementById("connectMetaMaskBtn").onclick = async () => {
+    if (!window.ethereum) { alert("Install MetaMask"); return; }
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+    provider = new ethers.BrowserProvider(window.ethereum);
+    signer = await provider.getSigner();
+    document.getElementById("walletStatus").innerText = "MetaMask Connected: " + await signer.getAddress();
+    initVault();
+};
+
+// --- Connect WalletConnect ---
+document.getElementById("connectWalletConnectBtn").onclick = async () => {
+    wcProvider = new WalletConnectProvider.default({
+        rpc: { 56: "https://bsc-dataseed.binance.org/" },
+        qrcode: true
+    });
+    await wcProvider.enable();
+    provider = new ethers.BrowserProvider(wcProvider);
+    signer = await provider.getSigner();
+    document.getElementById("walletStatus").innerText = "WalletConnect Connected: " + await signer.getAddress();
+    initVault();
+};
+
+// --- Initialize Vault ---
+async function initVault() {
     const addr = document.getElementById("contractAddress").value.trim();
-    if (!addr) { alert("Enter contract address"); return; }
-
-    if (window.ethereum) {
-        await window.ethereum.request({ method: 'eth_requestAccounts' });
-        provider = new ethers.BrowserProvider(window.ethereum);
-        signer = await provider.getSigner();
-    } else {
-        const rpcUrl = document.getElementById("rpcUrl").value.trim();
-        if (!rpcUrl) { alert("Enter RPC URL"); return; }
-        provider = new ethers.JsonRpcProvider(rpcUrl);
-        signer = provider;
-    }
-
+    if (!addr) { alert("Enter Vault Contract Address"); return; }
     vault = new ethers.Contract(addr, vaultAbi, signer);
-    document.getElementById("walletStatus").innerText = "Wallet Connected";
     await loadVaultInfo();
 }
 
+// --- Load Vault Info ---
 async function loadVaultInfo() {
     if (!vault) return;
     try {
@@ -120,7 +134,7 @@ async function loadVaultInfo() {
         const emergencyRequested = await vault.emergencyRequested();
         const emergencyTime = await vault.emergencyWithdrawRequestTime();
         const now = Math.floor(Date.now()/1000);
-        const countdown = emergencyRequested ? Math.max(0, (emergencyTime + 60*24*3600) - now) : 0;
+        const countdown = emergencyRequested ? Math.max(0,(emergencyTime+60*24*3600)-now) : 0;
 
         document.getElementById("vaultOwner").innerText = owner;
         document.getElementById("unlockTime").innerText = new Date(unlockTime*1000).toLocaleString();
@@ -137,7 +151,7 @@ async function loadVaultInfo() {
         let totalValueTokens = 0;
         const bnbBalance = parseFloat(ethers.formatEther(await provider.getBalance(vault.target)));
 
-        for (let i=0;i<tokenCount;i++) {
+        for (let i=0;i<tokenCount;i++){
             const tokenAddr = await vault.trackedTokens(i);
             const token = new ethers.Contract(tokenAddr, erc20Abi, provider);
             let bal = await token.balanceOf(vault.target);
@@ -156,6 +170,7 @@ async function loadVaultInfo() {
     }
 }
 
+// --- Send Transaction ---
 async function sendTx(funcName, params=[]) {
     try {
         const tx = await vault[funcName](...params);
@@ -168,7 +183,7 @@ async function sendTx(funcName, params=[]) {
     }
 }
 
-document.getElementById("connectBtn").onclick = connectVault;
+// --- Button Events ---
 document.getElementById("requestEmergencyBtn").onclick = ()=>sendTx("requestEmergency");
 document.getElementById("cancelEmergencyBtn").onclick = ()=>sendTx("cancelEmergency");
 document.getElementById("executeEmergencyBtn").onclick = async ()=>{
