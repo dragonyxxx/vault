@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultPro DCA & Backup V7</title>
+    <title>VaultPro DCA & Portfolio V7</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; max-width: 900px; margin: auto; padding: 15px; }
@@ -52,9 +52,8 @@
         <div id="walletStatus" class="small-text" style="text-align: center; margin-top: 5px;">Status: Terputus</div>
         
         <div class="flex-row" style="margin-top: 15px;">
-            <button onclick="exportData()" style="background: #059669; font-size: 12px;">💾 Backup Modal</button>
-            <button onclick="document.getElementById('importFile').click()" style="background: #7c3aed; font-size: 12px;">📂 Restore Modal</button>
-            <input type="file" id="importFile" style="display:none" onchange="importData(event)">
+            <button onclick="copyBackupToClipboard()" style="background: #059669; font-size: 12px;">📋 Salin Data Modal (Backup)</button>
+            <button onclick="restoreFromText()" style="background: #7c3aed; font-size: 12px;">📥 Tempel Data Modal (Restore)</button>
         </div>
     </div>
 
@@ -73,7 +72,7 @@
                 <tr>
                     <th>Aset</th>
                     <th>Saldo</th>
-                    <th>Input Beli Baru</th>
+                    <th>Input Beli Baru (Qty & Harga)</th>
                     <th>Profit/Loss</th>
                 </tr>
             </thead>
@@ -90,8 +89,7 @@ let portfolioMeta = JSON.parse(localStorage.getItem('vault_dca_meta')) || {};
 const vaultAbi = [
     "function trackedTokens(uint256) view returns(address)",
     "function trackToken(address token)",
-    "function unlockTime() view returns(uint256)",
-    "function emergencyRequested() view returns(bool)"
+    "function unlockTime() view returns(uint256)"
 ];
 
 const erc20Abi = [
@@ -172,7 +170,7 @@ function addDcaRow(symbol, amount, currentPrice, id) {
     const table = document.getElementById("tokenTable");
     
     const diff = (amount * currentPrice) - (amount * meta.avg);
-    const percent = meta.avg > 0 ? (diff / (amount * meta.avg)) * 100 : 0;
+    const percent = (meta.avg > 0 && amount > 0) ? (diff / (amount * meta.avg)) * 100 : 0;
 
     const row = document.createElement("tr");
     row.innerHTML = `
@@ -215,23 +213,28 @@ function updateOverallStats(current, invested) {
     plBox.innerText = `${diff >= 0 ? '+' : ''}$${diff.toFixed(2)} (${percent.toFixed(2)}%)`;
 }
 
-function exportData() {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(portfolioMeta));
-    const dlAnchorElem = document.createElement('a');
-    dlAnchorElem.setAttribute("href", dataStr);
-    dlAnchorElem.setAttribute("download", "vault_backup.json");
-    dlAnchorElem.click();
+// BACKUP & RESTORE REPAIR
+async function copyBackupToClipboard() {
+    try {
+        const dataStr = JSON.stringify(portfolioMeta);
+        await navigator.clipboard.writeText(dataStr);
+        alert("✅ Data Modal BERHASIL DISALIN!\n\nTempelkan teks ini di Catatan HP atau WhatsApp untuk cadangan.");
+    } catch (err) {
+        prompt("Gagal salin otomatis. Silakan salin teks di bawah secara manual:", JSON.stringify(portfolioMeta));
+    }
 }
 
-function importData(event) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        portfolioMeta = JSON.parse(e.target.result);
-        localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
-        refreshUI();
-        alert("Data Restored!");
-    };
-    reader.readAsText(event.target.files[0]);
+function restoreFromText() {
+    const backupText = prompt("Tempelkan teks backup Anda di sini:");
+    if (backupText) {
+        try {
+            const importedData = JSON.parse(backupText);
+            portfolioMeta = importedData;
+            localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
+            refreshUI();
+            alert("✅ Data Berhasil Dipulihkan!");
+        } catch (err) { alert("❌ Format salah."); }
+    }
 }
 
 async function trackNewToken() {
