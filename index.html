@@ -3,82 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultPro Dashboard V5 - Fixed</title>
-
+    <title>VaultPro Dashboard - Final Match</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
-
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: white; max-width: 800px; margin: auto; padding: 20px; }
+        body { font-family: sans-serif; background: #0f172a; color: white; max-width: 800px; margin: auto; padding: 20px; }
         .card { background: #1e293b; padding: 20px; margin-top: 20px; border-radius: 12px; border: 1px solid #334155; }
-        h2, h3 { color: #38bdf8; margin-top: 0; }
-        button { width: 100%; padding: 12px; margin-top: 10px; border: none; background: #2563eb; color: white; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #1d4ed8; }
+        button { width: 100%; padding: 12px; margin-top: 10px; border: none; background: #2563eb; color: white; font-weight: bold; border-radius: 8px; cursor: pointer; }
         input { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #334155; background: #0f172a; color: white; border-radius: 8px; box-sizing: border-box; }
         table { width: 100%; margin-top: 15px; border-collapse: collapse; }
         td, th { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
         .status-msg { margin-top: 10px; font-size: 0.9em; color: #94a3b8; }
-        small { color: #94a3b8; word-break: break-all; }
     </style>
 </head>
 <body>
 
-    <h2>VaultPro Dashboard V5</h2>
+    <h2>VaultPro Dashboard V5 (Final)</h2>
 
     <div class="card">
-        <label>Vault Smart Contract Address</label>
-        <input id="vaultAddress" placeholder="0x..." value="">
+        <label>Vault Address</label>
+        <input id="vaultAddress" placeholder="0x..." value="0x93C7d56BB62fFE993135f86C4BdD69c41D302b46">
         <button id="connectBtn">Hubungkan Wallet</button>
         <div id="walletStatus" class="status-msg">Status: Belum Terhubung</div>
     </div>
 
     <div class="card">
         <h3>Informasi Vault</h3>
-        <div>Owner: <span id="owner">-</span></div>
         <div>Unlock Time: <span id="unlock">-</span></div>
         <div>Emergency Status: <span id="emergency">-</span></div>
-        <div>Ready In: <b id="countdown" style="color:#fbbf24">-</b></div>
         <div>BNB Balance: <span id="bnb">0</span></div>
-        <div>Total Tracked Tokens: <span id="tokencount">0</span></div>
     </div>
 
     <div class="card">
-        <h3>Manajemen Token</h3>
-        <input id="tokenAddress" placeholder="Alamat Token (0x...)">
-        <button id="trackTokenBtn" style="background:#0ea5e9">Track Token Baru</button>
-    </div>
-
-    <div class="card" style="border-left: 5px solid #ef4444;">
-        <h3>Emergency Action</h3>
-        <button id="requestEmergency" style="background:#f59e0b">Request Emergency</button>
-        <button id="cancelEmergency" style="background:#64748b">Cancel Emergency</button>
-        <button id="executeAll" style="background:#ef4444">Execute (Tarik Semua Token)</button>
-        <div id="txStatus" class="status-msg"></div>
+        <h3>Track Token Baru</h3>
+        <input id="tokenAddress" placeholder="Alamat Token (USDT: 0x55d3...)">
+        <button id="trackTokenBtn" style="background:#0ea5e9">Track Token</button>
     </div>
 
     <div class="card">
-        <h3>Daftar Token Terdeteksi</h3>
+        <h3>Daftar Token & Saldo</h3>
         <table>
-            <thead>
-                <tr><th>Token</th><th>Saldo</th></tr>
-            </thead>
+            <thead><tr><th>Token</th><th>Saldo</th></tr></thead>
             <tbody id="tokenTable"></tbody>
         </table>
+        <button onclick="loadTokens()" style="background:#475569; font-size: 12px; width: auto; padding: 5px 15px;">Refresh Saldo</button>
     </div>
 
 <script>
 let provider, signer, vault, userAddress;
 
+// ABI ini sudah disesuaikan persis dengan kontrak Solidity Anda
 const vaultAbi = [
     "function owner() view returns(address)",
     "function unlockTime() view returns(uint256)",
     "function emergencyRequested() view returns(bool)",
     "function emergencyWithdrawRequestTime() view returns(uint256)",
-    "function trackedTokens(uint256) view returns(address)",
-    "function trackedTokensLength() view returns(uint256)",
+    "function trackedTokens(uint256) view returns(address)", // Cara akses array public
+    "function trackToken(address token)",
     "function requestEmergency()",
     "function cancelEmergency()",
-    "function executeEmergency(address[] tokens)",
-    "function trackToken(address token)"
+    "function executeEmergency(address[] tokens)"
 ];
 
 const erc20Abi = [
@@ -88,154 +71,93 @@ const erc20Abi = [
 ];
 
 async function connectWallet() {
-    try {
-        // Cek apakah library ethers termuat
-        if (typeof window.ethers === 'undefined') {
-            alert("Error: Library Ethers.js gagal dimuat. Coba refresh halaman.");
-            return;
-        }
+    if (typeof window.ethers === 'undefined') return alert("Ethers.js tidak terdeteksi");
+    const injected = window.ethereum || window.BinanceChain;
+    if (!injected) return alert("Gunakan Binance/MetaMask browser");
 
-        let injectedProvider = window.ethereum || (window.BinanceChain);
-        if (!injectedProvider) {
-            alert("Gunakan browser MetaMask / TrustWallet.");
-            return;
-        }
-
-        await injectedProvider.request({ method: "eth_requestAccounts" });
-        
-        // Memastikan menggunakan namespace window.ethers
-        provider = new window.ethers.BrowserProvider(injectedProvider);
-        signer = await provider.getSigner();
-        userAddress = await signer.getAddress();
-
-        document.getElementById("walletStatus").innerHTML = "Connected: " + userAddress;
-
-        const net = await provider.getNetwork();
-        if (net.chainId !== 56n) {
-            alert("Peringatan: Anda tidak berada di BNB Smart Chain (Chain 56)");
-        }
-
-        initVault();
-    } catch (e) {
-        alert("Koneksi Gagal: " + e.message);
-    }
+    await injected.request({ method: "eth_requestAccounts" });
+    provider = new window.ethers.BrowserProvider(injected);
+    signer = await provider.getSigner();
+    userAddress = await signer.getAddress();
+    document.getElementById("walletStatus").innerText = "Connected: " + userAddress;
+    
+    initVault();
 }
 
 async function initVault() {
     const addr = document.getElementById("vaultAddress").value.trim();
-    if (!window.ethers.isAddress(addr)) {
-        alert("Alamat Vault tidak valid!");
-        return;
-    }
     vault = new window.ethers.Contract(addr, vaultAbi, signer);
-    loadVault();
-}
+    
+    // Load data dasar
+    const [unlock, emergency, bnbBal] = await Promise.all([
+        vault.unlockTime(),
+        vault.emergencyRequested(),
+        provider.getBalance(addr)
+    ]);
 
-async function loadVault() {
-    try {
-        const [owner, unlock, emergency, reqTime, vaultAddr] = await Promise.all([
-            vault.owner(),
-            vault.unlockTime(),
-            vault.emergencyRequested(),
-            vault.emergencyWithdrawRequestTime(),
-            vault.getAddress()
-        ]);
+    document.getElementById("unlock").innerText = new Date(Number(unlock) * 1000).toLocaleString();
+    document.getElementById("emergency").innerText = emergency ? "AKTIF" : "Tidak Aktif";
+    document.getElementById("bnb").innerText = window.ethers.formatEther(bnbBal) + " BNB";
 
-        document.getElementById("owner").innerText = owner;
-        document.getElementById("unlock").innerText = new Date(Number(unlock) * 1000).toLocaleString();
-        document.getElementById("emergency").innerText = emergency ? "AKTIF (Menunggu Jeda)" : "Tidak Aktif";
-        
-        const bnbBal = await provider.getBalance(vaultAddr);
-        document.getElementById("bnb").innerText = window.ethers.formatEther(bnbBal) + " BNB";
-
-        updateCountdown(Number(reqTime));
-        loadTokens();
-    } catch (e) {
-        console.error(e);
-    }
+    loadTokens();
 }
 
 async function loadTokens() {
-    const count = await vault.trackedTokensLength();
-    document.getElementById("tokencount").innerText = count;
     const table = document.getElementById("tokenTable");
-    table.innerHTML = "<tr><td colspan='2'>Memuat data token...</td></tr>";
+    table.innerHTML = "<tr><td colspan='2'>Mencari token...</td></tr>";
+    
+    let tokens = [];
+    let i = 0;
+    let endOfArray = false;
 
-    const vaultAddr = await vault.getAddress();
-    const rows = [];
-
-    for (let i = 0; i < count; i++) {
-        const addr = await vault.trackedTokens(i);
-        const token = new window.ethers.Contract(addr, erc20Abi, provider);
-        
-        // Load detail token secara paralel agar cepat
-        const promise = Promise.all([
-            token.symbol().catch(() => "TOKEN"),
-            token.decimals().catch(() => 18),
-            token.balanceOf(vaultAddr)
-        ]).then(([sym, dec, bal]) => {
-            return `<tr><td>${sym}<br><small>${addr}</small></td><td>${window.ethers.formatUnits(bal, dec)}</td></tr>`;
-        });
-        rows.push(promise);
+    // Karena kontrak Anda tidak punya fungsi length, kita loop sampai error (habis)
+    while (!endOfArray) {
+        try {
+            const tokenAddr = await vault.trackedTokens(i);
+            tokens.push(tokenAddr);
+            i++;
+        } catch (e) {
+            endOfArray = true; // Array sudah habis
+        }
     }
 
-    const htmlRows = await Promise.all(rows);
-    table.innerHTML = htmlRows.join("");
-}
-
-function updateCountdown(reqTime) {
-    if (reqTime === 0) {
-        document.getElementById("countdown").innerText = "N/A";
+    if (tokens.length === 0) {
+        table.innerHTML = "<tr><td colspan='2'>Belum ada token terdaftar.</td></tr>";
         return;
     }
-    
-    const interval = setInterval(() => {
-        const now = Math.floor(Date.now() / 1000);
-        const ready = reqTime + (60 * 24 * 3600); // Ganti angka ini sesuai jeda hari di contract (contoh 60 hari)
-        const left = ready - now;
 
-        if (left <= 0) {
-            document.getElementById("countdown").innerText = "SIAP DIEKSEKUSI";
-            clearInterval(interval);
-        } else {
-            const h = Math.floor(left / 3600);
-            const m = Math.floor((left % 3600) / 60);
-            document.getElementById("countdown").innerText = `${h} jam ${m} menit lagi`;
+    table.innerHTML = "";
+    const vaultAddr = await vault.getAddress();
+
+    for (const addr of tokens) {
+        try {
+            const tContract = new window.ethers.Contract(addr, erc20Abi, provider);
+            const [sym, dec, bal] = await Promise.all([
+                tContract.symbol().catch(() => "TOKEN"),
+                tContract.decimals().catch(() => 18),
+                tContract.balanceOf(vaultAddr)
+            ]);
+            table.innerHTML += `<tr><td>${sym}<br><small>${addr}</small></td><td>${window.ethers.formatUnits(bal, dec)}</td></tr>`;
+        } catch (err) {
+            console.error(err);
         }
-    }, 1000);
-}
-
-async function sendTx(fn, args = []) {
-    try {
-        const tx = await vault[fn](...args);
-        document.getElementById("txStatus").innerText = "Transaksi dikirim...";
-        await tx.wait();
-        document.getElementById("txStatus").innerText = "Berhasil!";
-        loadVault();
-    } catch (e) {
-        document.getElementById("txStatus").innerText = "Error: " + (e.reason || e.message);
     }
 }
 
-// Event Listeners
 document.getElementById("connectBtn").onclick = connectWallet;
-document.getElementById("requestEmergency").onclick = () => sendTx("requestEmergency");
-document.getElementById("cancelEmergency").onclick = () => sendTx("cancelEmergency");
 
-document.getElementById("trackTokenBtn").onclick = () => {
+document.getElementById("trackTokenBtn").onclick = async () => {
     const addr = document.getElementById("tokenAddress").value;
-    if (!window.ethers.isAddress(addr)) return alert("Alamat token salah");
-    sendTx("trackToken", [addr]);
-};
-
-document.getElementById("executeAll").onclick = async () => {
-    if (!confirm("Tarik semua saldo token ke owner?")) return;
-    const count = await vault.trackedTokensLength();
-    let tokens = [];
-    for (let i = 0; i < count; i++) {
-        tokens.push(await vault.trackedTokens(i));
+    if (!window.ethers.isAddress(addr)) return alert("Alamat salah");
+    try {
+        const tx = await vault.trackToken(addr);
+        alert("Transaksi dikirim, tunggu konfirmasi...");
+        await tx.wait();
+        alert("Berhasil track token!");
+        loadTokens();
+    } catch (e) {
+        alert("Error: " + e.message);
     }
-    sendTx("executeEmergency", [tokens]);
 };
 </script>
 </body>
