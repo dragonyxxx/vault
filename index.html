@@ -2,10 +2,9 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>VaultPro Dashboard</title>
+<title>VaultPro Dashboard V5</title>
 
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.3/dist/ethers.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
 
 <style>
 
@@ -15,7 +14,7 @@ background:#0f172a;
 color:white;
 max-width:900px;
 margin:auto;
-padding:30px;
+padding:25px;
 }
 
 .card{
@@ -26,22 +25,22 @@ border-radius:10px;
 }
 
 button{
+width:100%;
 padding:12px;
 margin-top:10px;
-width:100%;
-background:#2563eb;
 border:none;
+background:#2563eb;
 color:white;
-border-radius:6px;
 font-size:16px;
+border-radius:6px;
 }
 
 input{
 width:100%;
 padding:10px;
 margin-top:8px;
-border-radius:5px;
 border:none;
+border-radius:5px;
 }
 
 table{
@@ -51,26 +50,23 @@ border-collapse:collapse;
 }
 
 td,th{
-border-bottom:1px solid #334155;
 padding:8px;
+border-bottom:1px solid #334155;
 }
 
 </style>
-
 </head>
 
 <body>
 
-<h2>VaultPro Dashboard</h2>
+<h2>VaultPro Dashboard V5</h2>
 
 <div class="card">
 
 <label>Vault Address</label>
 <input id="vaultAddress" placeholder="0x...">
 
-<button id="connectMetaMask">Connect MetaMask</button>
-
-<button id="connectWalletConnect">Connect Wallet</button>
+<button id="connectBtn">Connect Wallet</button>
 
 <div id="walletStatus"></div>
 
@@ -144,6 +140,7 @@ let signer
 let vault
 let userAddress
 
+// vault ABI
 const vaultAbi=[
 
 "function owner() view returns(address)",
@@ -161,6 +158,7 @@ const vaultAbi=[
 
 ]
 
+// erc20 ABI
 const erc20Abi=[
 
 "function balanceOf(address) view returns(uint256)",
@@ -169,61 +167,64 @@ const erc20Abi=[
 
 ]
 
-async function connectMetaMask(){
 
-if(!window.ethereum){
+// UNIVERSAL WALLET CONNECT
+async function connectWallet(){
 
-alert("MetaMask tidak terdeteksi")
+try{
 
+let injectedProvider = null
+
+// MetaMask / TrustWallet
+if(window.ethereum){
+injectedProvider = window.ethereum
+}
+
+// Binance wallet browser
+else if(window.BinanceChain){
+injectedProvider = window.BinanceChain
+}
+
+else{
+
+alert("Wallet tidak terdeteksi. Gunakan MetaMask / TrustWallet / Binance Wallet browser.")
 return
 
 }
 
-await window.ethereum.request({method:"eth_requestAccounts"})
-
-provider=new ethers.BrowserProvider(window.ethereum)
-
-signer=await provider.getSigner()
-
-userAddress=await signer.getAddress()
-
-document.getElementById("walletStatus").innerHTML="Connected: "+userAddress
-
-initVault()
-
-}
-
-document.getElementById("connectMetaMask").onclick=connectMetaMask
-
-
-
-async function connectWalletConnect(){
-
-const wcProvider = new WalletConnectProvider.default({
-
-rpc:{
-56:"https://bsc-dataseed.binance.org/"
-},
-
-chainId:56
-
+await injectedProvider.request({
+method:"eth_requestAccounts"
 })
 
-await wcProvider.enable()
+provider = new ethers.BrowserProvider(injectedProvider)
 
-provider=new ethers.BrowserProvider(wcProvider)
+signer = await provider.getSigner()
 
-signer=await provider.getSigner()
+userAddress = await signer.getAddress()
 
-userAddress=await signer.getAddress()
+document.getElementById("walletStatus").innerHTML =
+"Connected: "+userAddress
 
-document.getElementById("walletStatus").innerHTML="Connected: "+userAddress
+// check network
+const net = await provider.getNetwork()
 
-initVault()
+if(net.chainId !== 56n){
+
+alert("Silakan switch ke BNB Smart Chain")
 
 }
 
-document.getElementById("connectWalletConnect").onclick=connectWalletConnect
+initVault()
+
+}catch(e){
+
+alert(e.message)
+
+}
+
+}
+
+document.getElementById("connectBtn").onclick = connectWallet
 
 
 
@@ -239,7 +240,7 @@ return
 
 }
 
-vault=new ethers.Contract(addr,vaultAbi,signer)
+vault = new ethers.Contract(addr,vaultAbi,signer)
 
 loadVault()
 
@@ -249,25 +250,27 @@ loadVault()
 
 async function loadVault(){
 
-const owner=await vault.owner()
+const owner = await vault.owner()
 
-document.getElementById("owner").innerHTML=owner
+document.getElementById("owner").innerHTML = owner
 
-const unlock=await vault.unlockTime()
+const unlock = await vault.unlockTime()
 
-document.getElementById("unlock").innerHTML=new Date(Number(unlock)*1000).toLocaleString()
+document.getElementById("unlock").innerHTML =
+new Date(Number(unlock)*1000).toLocaleString()
 
-const emergency=await vault.emergencyRequested()
+const emergency = await vault.emergencyRequested()
 
-document.getElementById("emergency").innerHTML=emergency
+document.getElementById("emergency").innerHTML = emergency
 
-const reqTime=await vault.emergencyWithdrawRequestTime()
+const reqTime = await vault.emergencyWithdrawRequestTime()
 
 updateCountdown(reqTime)
 
-const bnb=await provider.getBalance(await vault.getAddress())
+const bnb = await provider.getBalance(await vault.getAddress())
 
-document.getElementById("bnb").innerHTML=ethers.formatEther(bnb)
+document.getElementById("bnb").innerHTML =
+ethers.formatEther(bnb)
 
 loadTokens()
 
@@ -277,9 +280,9 @@ loadTokens()
 
 async function loadTokens(){
 
-const count=await vault.trackedTokensLength()
+const count = await vault.trackedTokensLength()
 
-document.getElementById("tokencount").innerHTML=count
+document.getElementById("tokencount").innerHTML = count
 
 const table=document.getElementById("tokenTable")
 
@@ -292,13 +295,11 @@ const addr=await vault.trackedTokens(i)
 const token=new ethers.Contract(addr,erc20Abi,provider)
 
 let symbol="TOKEN"
-
 let decimals=18
 
 try{
 
 symbol=await token.symbol()
-
 decimals=await token.decimals()
 
 }catch{}
@@ -331,7 +332,8 @@ document.getElementById("countdown").innerHTML="READY"
 
 }else{
 
-document.getElementById("countdown").innerHTML=Math.floor(left/3600)+"h "+Math.floor((left%3600)/60)+"m"
+document.getElementById("countdown").innerHTML=
+Math.floor(left/3600)+"h "+Math.floor((left%3600)/60)+"m"
 
 }
 
@@ -345,7 +347,7 @@ async function sendTx(fn,args=[]){
 
 try{
 
-const tx=await vault[fn](...args)
+const tx = await vault[fn](...args)
 
 document.getElementById("txStatus").innerHTML="Tx sent"
 
@@ -357,19 +359,18 @@ loadVault()
 
 }catch(e){
 
-document.getElementById("txStatus").innerHTML=e.message
+document.getElementById("txStatus").innerHTML = e.message
 
 }
 
 }
 
 
+document.getElementById("requestEmergency").onclick=
+()=>sendTx("requestEmergency")
 
-document.getElementById("requestEmergency").onclick=()=>sendTx("requestEmergency")
-
-document.getElementById("cancelEmergency").onclick=()=>sendTx("cancelEmergency")
-
-
+document.getElementById("cancelEmergency").onclick=
+()=>sendTx("cancelEmergency")
 
 document.getElementById("executeAll").onclick=async()=>{
 
@@ -386,8 +387,6 @@ tokens.push(await vault.trackedTokens(i))
 sendTx("executeEmergency",[tokens])
 
 }
-
-
 
 document.getElementById("trackTokenBtn").onclick=()=>{
 
