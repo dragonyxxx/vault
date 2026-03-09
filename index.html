@@ -1,214 +1,433 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VaultPro Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.3/dist/ethers.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+
 <style>
-body { font-family: Arial, sans-serif; max-width: 700px; margin: 50px auto; }
-input, button { padding: 10px; margin: 5px 0; width: 100%; }
-label { font-weight: bold; margin-top: 15px; display: block; }
-.status { margin-top: 10px; font-weight: bold; color: green; }
-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-th { background-color: #eee; }
+
+body{
+font-family:Arial;
+background:#0f172a;
+color:white;
+max-width:900px;
+margin:auto;
+padding:30px;
+}
+
+h1{
+text-align:center;
+}
+
+.card{
+background:#1e293b;
+padding:20px;
+margin-top:20px;
+border-radius:10px;
+}
+
+button{
+padding:10px;
+margin-top:10px;
+width:100%;
+background:#2563eb;
+border:none;
+color:white;
+border-radius:5px;
+cursor:pointer;
+}
+
+button:hover{
+background:#1d4ed8;
+}
+
+input{
+width:100%;
+padding:10px;
+margin-top:8px;
+border-radius:5px;
+border:none;
+}
+
+table{
+width:100%;
+margin-top:10px;
+border-collapse:collapse;
+}
+
+td,th{
+border-bottom:1px solid #334155;
+padding:8px;
+}
+
+.status{
+margin-top:10px;
+font-weight:bold;
+}
+
+.owner{
+color:#22c55e;
+}
+
+.notowner{
+color:#ef4444;
+}
+
 </style>
 </head>
+
 <body>
-<h2>VaultPro Emergency Dashboard</h2>
 
-<label>Vault Contract Address:</label>
-<input type="text" id="contractAddress" placeholder="0x93C7d56BB62fFE993135f86C4BdD69c41D302b46">
+<h1>VaultPro Dashboard</h1>
 
-<label>Optional RPC URL (BSC, ETH etc.)</label>
-<input type="text" id="rpcUrl" placeholder="https://bsc-dataseed.binance.org/">
+<div class="card">
 
-<button id="connectMetaMaskBtn">Connect MetaMask</button>
-<button id="connectWalletConnectBtn">Connect WalletConnect</button>
-<div id="walletStatus" class="status"></div>
+<label>Vault Address</label>
+<input id="vaultAddress" placeholder="0x...">
 
-<hr>
+<button id="connectBtn">Connect MetaMask</button>
 
-<h3>Vault Info</h3>
-<div id="vaultInfo">
-    <div>Owner: <span id="vaultOwner">-</span></div>
-    <div>Unlock Time: <span id="unlockTime">-</span></div>
-    <div>Vault Locked Permanently: <span id="unlockLocked">-</span></div>
-    <div>Emergency Requested: <span id="emergencyStatus">-</span></div>
-    <div>Emergency Ready After: <span id="emergencyCountdown">-</span></div>
-    <div>BNB Balance: <span id="bnbBalance">0</span></div>
-    <div>Total Token Count: <span id="tokenCount">0</span></div>
-    <div>Total Vault Balance (est.): <span id="totalValue">0</span></div>
+<div id="walletStatus"></div>
+
 </div>
 
-<hr>
 
-<h3>Track New Token</h3>
-<input type="text" id="newTokenAddress" placeholder="0xTokenAddress">
-<button id="trackNewTokenBtn">Track Token</button>
+<div class="card">
 
-<hr>
+<h3>Vault Info</h3>
 
-<h3>Emergency Actions</h3>
-<button id="requestEmergencyBtn">Request Emergency</button>
-<button id="cancelEmergencyBtn">Cancel Emergency</button>
+<div>Owner: <span id="owner">-</span></div>
+<div>Unlock Time: <span id="unlock">-</span></div>
+<div>Emergency Requested: <span id="emergency">-</span></div>
+<div>Emergency Ready In: <span id="countdown">-</span></div>
+<div>BNB Balance: <span id="bnb">0</span></div>
+<div>Total Tokens: <span id="tokencount">0</span></div>
 
-<label>Execute Emergency (JSON Array of token addresses, empty = BNB only)</label>
-<input type="text" id="tokenArray" placeholder='["0xToken1","0xToken2"]'>
-<button id="executeEmergencyBtn">Execute Emergency</button>
-<button id="executeAllTokensBtn">Execute All Tokens + BNB</button>
+</div>
+
+
+<div class="card">
+
+<h3>Track Token</h3>
+
+<input id="tokenAddress" placeholder="0xToken">
+
+<button id="trackTokenBtn">Track Token</button>
+
+</div>
+
+
+<div class="card">
+
+<h3>Emergency</h3>
+
+<button id="requestEmergency">Request Emergency</button>
+
+<button id="cancelEmergency">Cancel Emergency</button>
+
+<button id="executeAll">Execute Emergency (All Tokens)</button>
 
 <div id="txStatus" class="status"></div>
 
+</div>
+
+
+<div class="card">
+
 <h3>Tracked Tokens</h3>
-<table id="tokenTable">
-    <thead>
-        <tr><th>Token Address</th><th>Balance</th></tr>
-    </thead>
-    <tbody></tbody>
+
+<table>
+
+<thead>
+<tr>
+<th>Token</th>
+<th>Balance</th>
+</tr>
+</thead>
+
+<tbody id="tokenTable"></tbody>
+
 </table>
 
+</div>
+
+
 <script>
-let provider, signer, vault, wcProvider;
 
-const vaultAbi = [
-    "function requestEmergency() external",
-    "function cancelEmergency() external",
-    "function executeEmergency(address[] calldata tokens) external",
-    "function trackToken(address token) external",
-    "function emergencyRequested() view returns (bool)",
-    "function emergencyWithdrawRequestTime() view returns (uint256)",
-    "function owner() view returns (address)",
-    "function trackedTokens(uint256) view returns (address)",
-    "function trackedTokensLength() view returns (uint256)",
-    "function unlockTime() view returns (uint256)",
-    "function unlockTimeLocked() view returns (bool)"
-];
+let provider
+let signer
+let vault
+let userAddress
 
-const erc20Abi = [
-    "function balanceOf(address account) view returns (uint256)",
-    "function decimals() view returns (uint8)",
-    "function symbol() view returns (string)"
-];
+const vaultAbi=[
 
-// --- Connect MetaMask ---
-document.getElementById("connectMetaMaskBtn").onclick = async () => {
-    if (!window.ethereum) { alert("Install MetaMask"); return; }
-    await window.ethereum.request({ method: 'eth_requestAccounts' });
-    provider = new ethers.BrowserProvider(window.ethereum);
-    signer = await provider.getSigner();
-    document.getElementById("walletStatus").innerText = "MetaMask Connected: " + await signer.getAddress();
-    initVault();
-};
+"function owner() view returns(address)",
+"function unlockTime() view returns(uint256)",
+"function emergencyRequested() view returns(bool)",
+"function emergencyWithdrawRequestTime() view returns(uint256)",
 
-// --- Connect WalletConnect ---
-document.getElementById("connectWalletConnectBtn").onclick = async () => {
-    wcProvider = new WalletConnectProvider.default({
-        rpc: { 56: "https://bsc-dataseed.binance.org/" },
-        qrcode: true
-    });
-    await wcProvider.enable();
-    provider = new ethers.BrowserProvider(wcProvider);
-    signer = await provider.getSigner();
-    document.getElementById("walletStatus").innerText = "WalletConnect Connected: " + await signer.getAddress();
-    initVault();
-};
+"function trackedTokens(uint256) view returns(address)",
+"function trackedTokensLength() view returns(uint256)",
 
-// --- Initialize Vault ---
-async function initVault() {
-    const addr = document.getElementById("contractAddress").value.trim();
-    if (!addr) { alert("Enter Vault Contract Address"); return; }
-    vault = new ethers.Contract(addr, vaultAbi, signer);
-    await loadVaultInfo();
+"function requestEmergency()",
+"function cancelEmergency()",
+"function executeEmergency(address[] tokens)",
+"function trackToken(address token)"
+
+]
+
+const erc20Abi=[
+
+"function balanceOf(address) view returns(uint256)",
+"function decimals() view returns(uint8)",
+"function symbol() view returns(string)"
+
+]
+
+async function connect(){
+
+if(!window.ethereum){
+
+alert("Install MetaMask")
+
+return
+
 }
 
-// --- Load Vault Info ---
-async function loadVaultInfo() {
-    if (!vault) return;
-    try {
-        const owner = await vault.owner();
-        const unlockTime = await vault.unlockTime();
-        const unlockLocked = await vault.unlockTimeLocked();
-        const emergencyRequested = await vault.emergencyRequested();
-        const emergencyTime = await vault.emergencyWithdrawRequestTime();
-        const now = Math.floor(Date.now()/1000);
-        const countdown = emergencyRequested ? Math.max(0,(emergencyTime+60*24*3600)-now) : 0;
+await ethereum.request({method:"eth_requestAccounts"})
 
-        document.getElementById("vaultOwner").innerText = owner;
-        document.getElementById("unlockTime").innerText = new Date(unlockTime*1000).toLocaleString();
-        document.getElementById("unlockLocked").innerText = unlockLocked;
-        document.getElementById("emergencyStatus").innerText = emergencyRequested;
-        document.getElementById("emergencyCountdown").innerText = countdown + " sec";
+provider=new ethers.BrowserProvider(window.ethereum)
 
-        // Tracked tokens
-        const tokenCount = await vault.trackedTokensLength();
-        document.getElementById("tokenCount").innerText = tokenCount;
-        const tbody = document.getElementById("tokenTable").querySelector("tbody");
-        tbody.innerHTML = "";
+signer=await provider.getSigner()
 
-        let totalValueTokens = 0;
-        const bnbBalance = parseFloat(ethers.formatEther(await provider.getBalance(vault.target)));
+userAddress=await signer.getAddress()
 
-        for (let i=0;i<tokenCount;i++){
-            const tokenAddr = await vault.trackedTokens(i);
-            const token = new ethers.Contract(tokenAddr, erc20Abi, provider);
-            let bal = await token.balanceOf(vault.target);
-            let decimals = 18;
-            try { decimals = await token.decimals(); } catch(e) {}
-            let balanceDisplay = parseFloat(ethers.formatUnits(bal, decimals));
-            tbody.innerHTML += `<tr><td>${tokenAddr}</td><td>${balanceDisplay}</td></tr>`;
-            totalValueTokens += balanceDisplay;
-        }
+const net=await provider.getNetwork()
 
-        document.getElementById("bnbBalance").innerText = bnbBalance;
-        document.getElementById("totalValue").innerText = (bnbBalance + totalValueTokens).toFixed(4);
+if(net.chainId!==56n){
 
-    } catch(err) {
-        document.getElementById("txStatus").innerText = "Error loading vault info: " + err.message;
-    }
+alert("Switch to BSC Mainnet")
+
+return
+
 }
 
-// --- Send Transaction ---
-async function sendTx(funcName, params=[]) {
-    try {
-        const tx = await vault[funcName](...params);
-        document.getElementById("txStatus").innerText = "Tx sent: " + tx.hash;
-        await tx.wait();
-        document.getElementById("txStatus").innerText = "Tx confirmed ✅";
-        await loadVaultInfo();
-    } catch(err) {
-        document.getElementById("txStatus").innerText = "Error: " + err.message;
-    }
+document.getElementById("walletStatus").innerHTML=
+
+"Connected: "+userAddress
+
+initVault()
+
 }
 
-// --- Button Events ---
-document.getElementById("requestEmergencyBtn").onclick = ()=>sendTx("requestEmergency");
-document.getElementById("cancelEmergencyBtn").onclick = ()=>sendTx("cancelEmergency");
-document.getElementById("executeEmergencyBtn").onclick = async ()=>{
-    let tokens = [];
-    const input = document.getElementById("tokenArray").value.trim();
-    if(input) tokens = JSON.parse(input);
-    await sendTx("executeEmergency",[tokens]);
-};
-document.getElementById("executeAllTokensBtn").onclick = async ()=>{
-    const tokenCount = await vault.trackedTokensLength();
-    const tokens = [];
-    for(let i=0;i<tokenCount;i++){
-        const t = await vault.trackedTokens(i);
-        tokens.push(t);
-    }
-    await sendTx("executeEmergency",[tokens]);
-};
-document.getElementById("trackNewTokenBtn").onclick = async ()=>{
-    const tokenAddr = document.getElementById("newTokenAddress").value.trim();
-    if(!tokenAddr) { alert("Enter token address"); return; }
-    await sendTx("trackToken",[tokenAddr]);
-};
+document.getElementById("connectBtn").onclick=connect
 
-// Auto-refresh vault info setiap 10 detik
-setInterval(()=>{ if(vault) loadVaultInfo(); }, 10000);
+
+async function initVault(){
+
+const addr=document.getElementById("vaultAddress").value.trim()
+
+if(!ethers.isAddress(addr)){
+
+alert("Invalid address")
+
+return
+
+}
+
+vault=new ethers.Contract(addr,vaultAbi,signer)
+
+loadVault()
+
+}
+
+
+async function loadVault(){
+
+try{
+
+const owner=await vault.owner()
+
+document.getElementById("owner").innerHTML=owner
+
+if(owner.toLowerCase()==userAddress.toLowerCase()){
+
+document.getElementById("owner").className="owner"
+
+}else{
+
+document.getElementById("owner").className="notowner"
+
+}
+
+const unlock=await vault.unlockTime()
+
+document.getElementById("unlock").innerHTML=
+
+new Date(Number(unlock)*1000).toLocaleString()
+
+const emergency=await vault.emergencyRequested()
+
+document.getElementById("emergency").innerHTML=emergency
+
+const reqTime=await vault.emergencyWithdrawRequestTime()
+
+updateCountdown(reqTime)
+
+const bnb=await provider.getBalance(await vault.getAddress())
+
+document.getElementById("bnb").innerHTML=
+
+parseFloat(ethers.formatEther(bnb)).toFixed(4)
+
+loadTokens()
+
+}catch(e){
+
+console.log(e)
+
+}
+
+}
+
+
+async function loadTokens(){
+
+const count=await vault.trackedTokensLength()
+
+document.getElementById("tokencount").innerHTML=count
+
+const table=document.getElementById("tokenTable")
+
+table.innerHTML=""
+
+for(let i=0;i<count;i++){
+
+const addr=await vault.trackedTokens(i)
+
+const token=new ethers.Contract(addr,erc20Abi,provider)
+
+let symbol="TOKEN"
+
+let decimals=18
+
+try{
+
+symbol=await token.symbol()
+
+decimals=await token.decimals()
+
+}catch{}
+
+const bal=await token.balanceOf(await vault.getAddress())
+
+const amount=ethers.formatUnits(bal,decimals)
+
+table.innerHTML+=
+
+`<tr><td>${symbol}<br>${addr}</td><td>${parseFloat(amount).toFixed(4)}</td></tr>`
+
+}
+
+}
+
+
+function updateCountdown(reqTime){
+
+setInterval(()=>{
+
+const now=Math.floor(Date.now()/1000)
+
+const ready=reqTime+60*24*3600
+
+const left=ready-now
+
+if(left<=0){
+
+document.getElementById("countdown").innerHTML="READY"
+
+}else{
+
+document.getElementById("countdown").innerHTML=
+
+Math.floor(left/3600)+"h "+Math.floor((left%3600)/60)+"m"
+
+}
+
+},1000)
+
+}
+
+
+async function sendTx(fn,args=[]){
+
+try{
+
+const tx=await vault[fn](...args)
+
+document.getElementById("txStatus").innerHTML="Tx sent"
+
+await tx.wait()
+
+document.getElementById("txStatus").innerHTML="Tx confirmed"
+
+loadVault()
+
+}catch(e){
+
+document.getElementById("txStatus").innerHTML=e.message
+
+}
+
+}
+
+
+document.getElementById("requestEmergency").onclick=()=>sendTx("requestEmergency")
+
+document.getElementById("cancelEmergency").onclick=()=>sendTx("cancelEmergency")
+
+document.getElementById("executeAll").onclick=async()=>{
+
+const count=await vault.trackedTokensLength()
+
+let tokens=[]
+
+for(let i=0;i<count;i++){
+
+tokens.push(await vault.trackedTokens(i))
+
+}
+
+sendTx("executeEmergency",[tokens])
+
+}
+
+
+document.getElementById("trackTokenBtn").onclick=()=>{
+
+const addr=document.getElementById("tokenAddress").value
+
+if(!ethers.isAddress(addr)){
+
+alert("invalid token")
+
+return
+
+}
+
+sendTx("trackToken",[addr])
+
+}
+
+
+setInterval(()=>{
+
+if(vault) loadVault()
+
+},10000)
+
 </script>
+
 </body>
 </html>
