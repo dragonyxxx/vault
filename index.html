@@ -2,10 +2,9 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>VaultPro Dashboard PRO</title>
+<title>VaultPro Dashboard</title>
 
-<!-- ethers (compatible CDN) -->
-<script src="https://unpkg.com/ethers@6.8.3/dist/ethers.umd.min.js"></script>
+<script src="https://unpkg.com/ethers@5.7.2/dist/ethers.min.js"></script>
 
 <style>
 
@@ -65,7 +64,7 @@ font-weight:bold;
 
 <body>
 
-<h2>VaultPro Dashboard PRO</h2>
+<h2>VaultPro Dashboard</h2>
 
 <div class="card">
 
@@ -141,14 +140,12 @@ font-weight:bold;
 
 <script>
 
-const {ethers} = window
-
 let provider
 let signer
 let vault
 let userAddress
 
-// VAULT ABI
+
 const vaultAbi=[
 
 "function owner() view returns(address)",
@@ -166,7 +163,6 @@ const vaultAbi=[
 
 ]
 
-// ERC20 ABI
 const erc20Abi=[
 
 "function balanceOf(address) view returns(uint256)",
@@ -176,52 +172,43 @@ const erc20Abi=[
 ]
 
 
-// UNIVERSAL WALLET CONNECT
+
 async function connectWallet(){
 
 try{
 
-let injectedProvider = null
+let injectedProvider=null
 
 if(window.ethereum){
-
-injectedProvider = window.ethereum
-
+injectedProvider=window.ethereum
 }
 
 else if(window.BinanceChain){
-
-injectedProvider = window.BinanceChain
-
+injectedProvider=window.BinanceChain
 }
 
 else{
-
-alert("Wallet tidak terdeteksi. Gunakan browser Binance / MetaMask / TrustWallet.")
-
+alert("Wallet tidak terdeteksi")
 return
-
 }
 
 await injectedProvider.request({
 method:"eth_requestAccounts"
 })
 
-provider = new ethers.BrowserProvider(injectedProvider)
+provider=new ethers.providers.Web3Provider(injectedProvider)
 
-signer = await provider.getSigner()
+signer=provider.getSigner()
 
-userAddress = await signer.getAddress()
+userAddress=await signer.getAddress()
 
-document.getElementById("walletStatus").innerHTML =
-"Connected: " + userAddress
+document.getElementById("walletStatus").innerHTML=
+"Connected: "+userAddress
 
-const net = await provider.getNetwork()
+const network=await provider.getNetwork()
 
-if(net.chainId !== 56n){
-
-alert("Silakan switch ke BNB Smart Chain")
-
+if(network.chainId!==56){
+alert("Switch ke BNB Smart Chain")
 }
 
 initVault()
@@ -234,7 +221,7 @@ alert(e.message)
 
 }
 
-document.getElementById("connectWallet").onclick = connectWallet
+document.getElementById("connectWallet").onclick=connectWallet
 
 
 
@@ -242,15 +229,15 @@ async function initVault(){
 
 const addr=document.getElementById("vaultAddress").value.trim()
 
-if(!ethers.isAddress(addr)){
+if(!ethers.utils.isAddress(addr)){
 
-alert("Invalid vault address")
+alert("Invalid address")
 
 return
 
 }
 
-vault = new ethers.Contract(addr,vaultAbi,signer)
+vault=new ethers.Contract(addr,vaultAbi,signer)
 
 loadVault()
 
@@ -260,27 +247,27 @@ loadVault()
 
 async function loadVault(){
 
-const owner = await vault.owner()
+const owner=await vault.owner()
 
-document.getElementById("owner").innerHTML = owner
+document.getElementById("owner").innerHTML=owner
 
-const unlock = await vault.unlockTime()
+const unlock=await vault.unlockTime()
 
-document.getElementById("unlock").innerHTML =
-new Date(Number(unlock)*1000).toLocaleString()
+document.getElementById("unlock").innerHTML=
+new Date(unlock*1000).toLocaleString()
 
-const emergency = await vault.emergencyRequested()
+const emergency=await vault.emergencyRequested()
 
-document.getElementById("emergency").innerHTML = emergency
+document.getElementById("emergency").innerHTML=emergency
 
-const reqTime = await vault.emergencyWithdrawRequestTime()
+const reqTime=await vault.emergencyWithdrawRequestTime()
 
 updateCountdown(reqTime)
 
-const bnb = await provider.getBalance(await vault.getAddress())
+const bnb=await provider.getBalance(vault.address)
 
-document.getElementById("bnb").innerHTML =
-parseFloat(ethers.formatEther(bnb)).toFixed(4)
+document.getElementById("bnb").innerHTML=
+parseFloat(ethers.utils.formatEther(bnb)).toFixed(4)
 
 loadTokens()
 
@@ -290,9 +277,9 @@ loadTokens()
 
 async function loadTokens(){
 
-const count = await vault.trackedTokensLength()
+const count=await vault.trackedTokensLength()
 
-document.getElementById("tokencount").innerHTML = count
+document.getElementById("tokencount").innerHTML=count
 
 const table=document.getElementById("tokenTable")
 
@@ -314,9 +301,9 @@ decimals=await token.decimals()
 
 }catch{}
 
-const bal=await token.balanceOf(await vault.getAddress())
+const bal=await token.balanceOf(vault.address)
 
-const amount=ethers.formatUnits(bal,decimals)
+const amount=ethers.utils.formatUnits(bal,decimals)
 
 table.innerHTML+=`<tr><td>${symbol}<br>${addr}</td><td>${parseFloat(amount).toFixed(4)}</td></tr>`
 
@@ -357,7 +344,7 @@ async function sendTx(fn,args=[]){
 
 try{
 
-const tx = await vault[fn](...args)
+const tx=await vault[fn](...args)
 
 document.getElementById("txStatus").innerHTML="Tx sent"
 
@@ -376,11 +363,14 @@ document.getElementById("txStatus").innerHTML=e.message
 }
 
 
+
 document.getElementById("requestEmergency").onclick=
 ()=>sendTx("requestEmergency")
 
 document.getElementById("cancelEmergency").onclick=
 ()=>sendTx("cancelEmergency")
+
+
 
 document.getElementById("executeAll").onclick=async()=>{
 
@@ -399,11 +389,12 @@ sendTx("executeEmergency",[tokens])
 }
 
 
+
 document.getElementById("trackTokenBtn").onclick=()=>{
 
 const addr=document.getElementById("tokenAddress").value
 
-if(!ethers.isAddress(addr)){
+if(!ethers.utils.isAddress(addr)){
 
 alert("invalid token")
 
