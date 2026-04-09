@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultPro DCA & Portfolio V8 - Auto Price</title>
+    <title>VaultPro DCA & Portfolio V9 - Final Fix</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; max-width: 900px; margin: auto; padding: 15px; }
@@ -11,15 +11,12 @@
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
         .stat-box { background: #0f172a; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #334155; }
         .total-value { font-size: 32px; color: #38bdf8; font-weight: bold; text-align: center; margin: 10px 0; }
-        
         button { width: 100%; padding: 10px; border: none; background: #2563eb; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
         button:hover { opacity: 0.8; }
         input { width: 100%; padding: 8px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 5px; box-sizing: border-box; }
-        
         table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 0.85em; }
         th { text-align: left; color: #94a3b8; padding-bottom: 10px; }
-        td { padding: 10px 5px; border-bottom: 1px solid #334155; }
-        
+        td { padding: 10px 5px; border-bottom: 1px solid #334155; vertical-align: middle; }
         .input-group { display: flex; gap: 4px; margin-top: 5px; }
         .btn-add { width: 35px; background: #22c55e; padding: 5px; }
         .profit { color: #22c55e; font-weight: bold; }
@@ -48,37 +45,37 @@
 
     <div class="card">
         <input id="vaultAddress" value="0x93C7d56BB62fFE993135f86C4BdD69c41D302b46" style="margin-bottom: 10px;">
-        <button id="connectBtn">Connect Wallet & Sync Portfolio</button>
+        <button id="connectBtn">Connect Wallet & Sync</button>
         <div id="walletStatus" class="small-text" style="text-align: center; margin-top: 5px;">Status: Terputus</div>
         
         <div class="flex-row" style="margin-top: 15px;">
-            <button onclick="copyBackupToClipboard()" style="background: #059669; font-size: 12px;">📋 Salin Backup Modal</button>
-            <button onclick="restoreFromText()" style="background: #7c3aed; font-size: 12px;">📥 Restore Data Modal</button>
+            <button onclick="copyBackupToClipboard()" style="background: #059669; font-size: 11px;">📋 Copy Backup</button>
+            <button onclick="restoreFromText()" style="background: #7c3aed; font-size: 11px;">📥 Restore Data</button>
         </div>
     </div>
 
     <div class="card">
         <h3>Track Token Baru</h3>
         <div class="input-group">
-            <input id="newTokenAddr" placeholder="Alamat Kontrak BEP-20 (Otomatis deteksi harga)">
-            <button onclick="trackNewToken()" style="width: 120px; background: #0ea5e9;">Track</button>
+            <input id="newTokenAddr" placeholder="Alamat Kontrak BEP-20">
+            <button onclick="trackNewToken()" style="width: 100px; background: #0ea5e9;">Track</button>
         </div>
     </div>
 
     <div class="card">
-        <h3>Daftar Aset & Performa</h3>
+        <h3>Aset & Performa</h3>
         <table>
             <thead>
                 <tr>
                     <th>Aset</th>
                     <th>Saldo</th>
-                    <th>Modal (Input Manual)</th>
-                    <th>P/L Real-time</th>
+                    <th>Input Modal Baru</th>
+                    <th>Value / P&L</th>
                 </tr>
             </thead>
             <tbody id="tokenTable"></tbody>
         </table>
-        <div id="lastUpdate" class="small-text" style="margin-top: 15px; text-align: center;">Harga otomatis diperbarui via CoinGecko</div>
+        <div id="lastUpdate" class="small-text" style="margin-top: 15px; text-align: center;">Harga otomatis via CoinGecko</div>
     </div>
 
 <script>
@@ -86,55 +83,43 @@ let provider, signer, vault;
 let bnbPrice = 0;
 let portfolioMeta = JSON.parse(localStorage.getItem('vault_dca_meta')) || {};
 
-const vaultAbi = [
-    "function trackedTokens(uint256) view returns(address)",
-    "function trackToken(address token)",
-    "function unlockTime() view returns(uint256)"
-];
-
+const vaultAbi = ["function trackedTokens(uint256) view returns(address)", "function trackToken(address token)"];
 const erc20Abi = [
     "function balanceOf(address) view returns(uint256)",
     "function decimals() view returns(uint8)",
     "function symbol() view returns(string)"
 ];
 
-// 1. Fungsi Ambil Harga BNB Dasar
 async function fetchBnbPrice() {
     try {
         const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=binancecoin&vs_currencies=usd");
         const data = await res.json();
         bnbPrice = data.binancecoin.usd;
-        document.getElementById("bnbPriceDisplay").innerText = "$" + bnbPrice;
+        document.getElementById("bnbPriceDisplay").innerText = "$" + bnbPrice.toLocaleString();
     } catch (e) { console.error("Gagal muat harga BNB"); }
 }
 
-// 2. Fungsi Ambil Harga Multi-Token Otomatis (BSC)
-async function getBulkTokenPrices(addresses) {
+async function getBulkPrices(addresses) {
     if (addresses.length === 0) return {};
     try {
         const query = addresses.join(',');
         const res = await fetch(`https://api.coingecko.com/api/v3/simple/token_price/binance-smart-chain?contract_addresses=${query}&vs_currencies=usd`);
         return await res.json();
-    } catch (e) {
-        console.error("Gagal muat harga token massal");
-        return {};
-    }
+    } catch (e) { return {}; }
 }
 
 async function connectWallet() {
-    const injected = window.ethereum || window.BinanceChain;
-    if (!injected) return alert("Gunakan browser yang mendukung Web3 (Metamask/TrustWallet)");
-    await injected.request({ method: "eth_requestAccounts" });
-    provider = new window.ethers.BrowserProvider(injected);
+    if (!window.ethereum) return alert("Gunakan Browser Web3");
+    await window.ethereum.request({ method: "eth_requestAccounts" });
+    provider = new window.ethers.BrowserProvider(window.ethereum);
     signer = await provider.getSigner();
-    document.getElementById("walletStatus").innerText = "Terhubung: " + (await signer.getAddress()).substring(0, 10) + "...";
+    document.getElementById("walletStatus").innerText = "Terhubung: " + (await signer.getAddress()).substring(0,6);
     await fetchBnbPrice();
     initVault();
 }
 
 function initVault() {
     const addr = document.getElementById("vaultAddress").value.trim();
-    if(!window.ethers.isAddress(addr)) return alert("Alamat Vault tidak valid");
     vault = new window.ethers.Contract(addr, vaultAbi, signer);
     refreshUI();
 }
@@ -142,25 +127,18 @@ function initVault() {
 async function refreshUI() {
     if(!vault) return;
     const table = document.getElementById("tokenTable");
-    table.innerHTML = "<tr><td colspan='4' style='text-align:center'>Menyinkronkan data & harga...</td></tr>";
+    table.innerHTML = "<tr><td colspan='4' style='text-align:center'>Updating...</td></tr>";
     
     const vaultAddr = await vault.getAddress();
-    
-    // Ambil list token dari contract
     let tokenList = [];
     for(let i=0; i<30; i++) {
-        try { 
-            const tAddr = await vault.trackedTokens(i); 
-            tokenList.push(tAddr.toLowerCase());
-        } catch(e) { break; }
+        try { tokenList.push((await vault.trackedTokens(i)).toLowerCase()); } catch(e) { break; }
     }
 
-    // Ambil semua harga token sekaligus
-    const allPrices = await getBulkTokenPrices(tokenList);
-    
+    const allPrices = await getBulkPrices(tokenList);
     table.innerHTML = "";
     
-    // Bagian 1: BNB
+    // 1. Hitung BNB
     const bnbBal = await provider.getBalance(vaultAddr);
     const bnbAmount = parseFloat(window.ethers.formatEther(bnbBal));
     addDcaRow("BNB", bnbAmount, bnbPrice, "BNB");
@@ -168,28 +146,22 @@ async function refreshUI() {
     let totalVal = bnbAmount * bnbPrice;
     let totalInv = (portfolioMeta["BNB"]?.avg || 0) * bnbAmount;
 
-    // Bagian 2: Token-token Terdeteksi
+    // 2. Hitung Token
     for (const addr of tokenList) {
         try {
             const tContract = new window.ethers.Contract(addr, erc20Abi, provider);
-            const [sym, dec, bal] = await Promise.all([
-                tContract.symbol(), 
-                tContract.decimals(), 
-                tContract.balanceOf(vaultAddr)
-            ]);
-            
+            const [sym, dec, bal] = await Promise.all([tContract.symbol(), tContract.decimals(), tContract.balanceOf(vaultAddr)]);
             const amount = parseFloat(window.ethers.formatUnits(bal, dec));
             const currPrice = allPrices[addr] ? allPrices[addr].usd : 0;
             
             addDcaRow(sym, amount, currPrice, addr);
-            
             totalVal += (amount * currPrice);
             totalInv += ((portfolioMeta[addr]?.avg || 0) * amount);
-        } catch (e) { console.error("Gagal muat token:", addr); }
+        } catch (e) {}
     }
     
     updateOverallStats(totalVal, totalInv);
-    document.getElementById("lastUpdate").innerText = "Update Terakhir: " + new Date().toLocaleTimeString();
+    document.getElementById("lastUpdate").innerText = "Update: " + new Date().toLocaleTimeString();
 }
 
 function addDcaRow(symbol, amount, currentPrice, id) {
@@ -203,18 +175,21 @@ function addDcaRow(symbol, amount, currentPrice, id) {
 
     const row = document.createElement("tr");
     row.innerHTML = `
-        <td><b>${symbol}</b><br><span class="small-text">Avg: $${meta.avg.toLocaleString()}</span></td>
-        <td>${amount.toLocaleString(undefined, {maximumFractionDigits:4})}</td>
+        <td><b>${symbol}</b><br><span class="small-text">Avg: $${meta.avg.toFixed(4)}</span></td>
+        <td>${amount.toLocaleString('en-US', {maximumFractionDigits: 6})}</td>
         <td>
             <div class="input-group">
-                <input type="number" id="qty-${id}" placeholder="Qty Beli">
-                <input type="number" id="prc-${id}" placeholder="Harga Beli">
+                <input type="number" step="any" id="qty-${id}" placeholder="Qty">
+                <input type="number" step="any" id="prc-${id}" placeholder="Harga">
                 <button class="btn-add" onclick="recordTrade('${id}', '${symbol}')">+</button>
             </div>
             <span class="small-text" style="cursor:pointer; color:#ef4444;" onclick="resetTrade('${id}')">Reset Modal</span>
         </td>
-        <td class="${diff >= 0 ? 'profit' : 'loss'}">
-            $${diff.toFixed(2)}<br><span style="font-size:0.8em">${percent.toFixed(2)}%</span>
+        <td>
+            <b>$${currentVal.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</b><br>
+            <span class="${diff >= 0 ? 'profit' : 'loss'}" style="font-size:0.85em">
+                ${diff >= 0 ? '+' : ''}${percent.toFixed(2)}%
+            </span>
         </td>
     `;
     table.appendChild(row);
@@ -234,45 +209,40 @@ function recordTrade(id, symbol) {
 }
 
 function updateOverallStats(current, invested) {
-    document.getElementById("grandTotalUSD").innerText = "$" + current.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    document.getElementById("grandTotalUSD").innerText = "$" + current.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const plBox = document.getElementById("totalPL");
     const diff = current - invested;
     const percent = invested > 0 ? (diff / invested) * 100 : 0;
     plBox.className = diff >= 0 ? "profit" : "loss";
-    plBox.innerText = `${diff >= 0 ? '+' : ''}$${diff.toLocaleString(undefined, {maximumFractionDigits:2})} (${percent.toFixed(2)}%)`;
-}
-
-async function copyBackupToClipboard() {
-    try {
-        await navigator.clipboard.writeText(JSON.stringify(portfolioMeta));
-        alert("✅ Backup disalin ke clipboard!");
-    } catch (err) { alert("Data: " + JSON.stringify(portfolioMeta)); }
-}
-
-function restoreFromText() {
-    const backupText = prompt("Tempel data backup di sini:");
-    if (backupText) {
-        try {
-            portfolioMeta = JSON.parse(backupText);
-            localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
-            refreshUI();
-            alert("✅ Data dipulihkan!");
-        } catch (err) { alert("❌ Format salah."); }
-    }
+    plBox.innerText = `${diff >= 0 ? '+' : ''}$${diff.toLocaleString('en-US', {maximumFractionDigits:2})} (${percent.toFixed(2)}%)`;
 }
 
 async function trackNewToken() {
     const addr = document.getElementById("newTokenAddr").value.trim();
-    if(!window.ethers.isAddress(addr)) return alert("Alamat tidak valid");
+    if(!window.ethers.isAddress(addr)) return alert("Alamat Salah");
     try {
         const tx = await vault.trackToken(addr);
         await tx.wait();
         refreshUI();
-    } catch (e) { alert("Gagal track: " + e.message); }
+    } catch (e) { alert("Gagal!"); }
+}
+
+async function copyBackupToClipboard() {
+    await navigator.clipboard.writeText(JSON.stringify(portfolioMeta));
+    alert("Backup Tersalin!");
+}
+
+function restoreFromText() {
+    const txt = prompt("Tempel Backup:");
+    if (txt) {
+        portfolioMeta = JSON.parse(txt);
+        localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
+        refreshUI();
+    }
 }
 
 function resetTrade(id) {
-    if(confirm("Hapus histori modal untuk aset ini?")) {
+    if(confirm("Hapus modal?")) {
         delete portfolioMeta[id];
         localStorage.setItem('vault_dca_meta', JSON.stringify(portfolioMeta));
         refreshUI();
@@ -280,7 +250,6 @@ function resetTrade(id) {
 }
 
 document.getElementById("connectBtn").onclick = connectWallet;
-setInterval(() => { if(signer) refreshUI(); }, 600000); // Auto-refresh tiap 10 menit
 </script>
 </body>
 </html>
