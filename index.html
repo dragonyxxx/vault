@@ -3,32 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VaultPro DCA V11 - Full Auto Tracker</title>
+    <title>VaultPro V12 - Full Auto Lock</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.2/ethers.umd.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: white; max-width: 900px; margin: auto; padding: 15px; }
         .card { background: #1e293b; padding: 20px; margin-top: 15px; border-radius: 12px; border: 1px solid #334155; }
+        .total-value { font-size: 32px; color: #38bdf8; font-weight: bold; text-align: center; margin: 10px 0; }
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
         .stat-box { background: #0f172a; padding: 15px; border-radius: 10px; text-align: center; border: 1px solid #334155; }
-        .total-value { font-size: 32px; color: #38bdf8; font-weight: bold; text-align: center; margin: 10px 0; }
-        button { width: 100%; padding: 10px; border: none; background: #2563eb; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; transition: 0.2s; }
-        button:hover { opacity: 0.8; }
-        input { width: 100%; padding: 8px; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 5px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; border: none; background: #2563eb; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; }
         table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 0.82em; }
         th { text-align: left; color: #94a3b8; padding-bottom: 10px; }
-        td { padding: 10px 5px; border-bottom: 1px solid #334155; vertical-align: middle; }
+        td { padding: 12px 5px; border-bottom: 1px solid #334155; }
         .profit { color: #22c55e; font-weight: bold; }
         .loss { color: #ef4444; font-weight: bold; }
         .small-text { font-size: 0.72em; color: #94a3b8; }
-        .badge-auto { background: #0ea5e9; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; vertical-align: middle; margin-left: 5px; }
+        .badge-auto { background: #0ea5e9; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; margin-left: 5px; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <div style="text-align: center; color: #94a3b8; font-size: 0.9em;">Estimasi Portofolio (Auto-Tracked via BscScan)</div>
+        <div style="text-align: center; color: #94a3b8; font-size: 0.9em;">Estimasi Portofolio (V12 Smart Auto-Lock)</div>
         <div class="total-value" id="grandTotalUSD">$0.00</div>
-        
         <div class="stats-grid">
             <div class="stat-box">
                 <div class="small-text">Total Profit/Loss</div>
@@ -43,45 +40,35 @@
 
     <div class="card">
         <input id="vaultAddress" value="0x93C7d56BB62fFE993135f86C4BdD69c41D302b46" style="margin-bottom: 10px;">
-        <button id="connectBtn">Connect Wallet & Sync History</button>
-        <div id="walletStatus" class="small-text" style="text-align: center; margin-top: 5px;">Status: Terputus</div>
+        <button id="connectBtn">Connect Wallet & Auto-Sync</button>
+        <div id="walletStatus" class="small-text" style="text-align: center; margin-top: 5px;">Status: Terhubung via BscScan API</div>
     </div>
 
     <div class="card">
-        <h3>Daftar Aset & Performa Otomatis</h3>
+        <h3>Aset Berjalan (Full Auto)</h3>
         <table>
             <thead>
                 <tr>
                     <th>Aset</th>
                     <th>Saldo</th>
-                    <th>Estimasi Modal</th>
+                    <th>Modal (Locked)</th>
                     <th>Value / P&L</th>
                 </tr>
             </thead>
             <tbody id="tokenTable"></tbody>
         </table>
-        <div id="lastUpdate" class="small-text" style="margin-top: 15px; text-align: center;">Data sinkron otomatis dengan histori transaksi on-chain.</div>
     </div>
 
 <script>
-// API KEY Terpasang
 const BSC_SCAN_API_KEY = "HSKNEF6VSS8C7U8JMPYT3R5MU9CE1HSV2P"; 
-
 let provider, signer, vault;
 let globalPrices = { bnb: 0 };
-let autoMeta = {}; 
+// Load modal yang sudah terkunci dari penyimpanan browser
+let lockedMeta = JSON.parse(localStorage.getItem('vault_locked_prices')) || {};
 
 const vaultAbi = ["function trackedTokens(uint256) view returns(address)"];
-const erc20Abi = [
-    "function balanceOf(address) view returns(uint256)",
-    "function decimals() view returns(uint8)",
-    "function symbol() view returns(string)"
-];
-
-const symbolToId = {
-    "USDT": "tether", "XAUt": "tether-gold", "DOGE": "dogecoin",
-    "TRX": "tron", "SOL": "solana", "ETH": "ethereum", "XRP": "ripple"
-};
+const erc20Abi = ["function balanceOf(address) view returns(uint256)", "function decimals() view returns(uint8)", "function symbol() view returns(string)"];
+const symbolToId = { "USDT": "tether", "XAUt": "tether-gold", "DOGE": "dogecoin", "TRX": "tron", "SOL": "solana", "ETH": "ethereum", "XRP": "ripple" };
 
 async function fetchPrices(contracts) {
     try {
@@ -90,51 +77,21 @@ async function fetchPrices(contracts) {
         const marketData = await resMarket.json();
         globalPrices.bnb = marketData.binancecoin.usd;
         document.getElementById("bnbPriceDisplay").innerText = "$" + globalPrices.bnb.toLocaleString();
-        
         for (const [sym, id] of Object.entries(symbolToId)) {
             if(marketData[id]) globalPrices[sym.toUpperCase()] = marketData[id].usd;
         }
-        
         if (contracts.length > 0) {
             const resContract = await fetch(`https://api.coingecko.com/api/v3/simple/token_price/binance-smart-chain?contract_addresses=${contracts.join(',')}&vs_currencies=usd`);
             globalPrices.contracts = await resContract.json();
         }
-    } catch (e) { console.error("Gagal ambil harga"); }
-}
-
-async function autoScanHistory(vaultAddr) {
-    try {
-        const url = `https://api.bscscan.com/api?module=account&action=tokentx&address=${vaultAddr}&sort=asc&apikey=${BSC_SCAN_API_KEY}`;
-        const res = await fetch(url);
-        const data = await res.json();
-        
-        if (data.status === "1") {
-            autoMeta = {}; 
-            data.result.forEach(tx => {
-                const addr = tx.contractAddress.toLowerCase();
-                const qty = parseFloat(ethers.formatUnits(tx.value, tx.tokenDecimal));
-                
-                // Hanya hitung transaksi masuk (Inbound)
-                if (tx.to.toLowerCase() === vaultAddr.toLowerCase()) {
-                    if (!autoMeta[addr]) autoMeta[addr] = { totalQty: 0, totalSpent: 0 };
-                    
-                    // Estimasi harga berdasarkan harga pasar saat ini
-                    let currentPrice = (globalPrices.contracts && globalPrices.contracts[addr]) ? globalPrices.contracts[addr].usd : (globalPrices[tx.tokenSymbol.toUpperCase()] || 0);
-                    
-                    autoMeta[addr].totalQty += qty;
-                    autoMeta[addr].totalSpent += (qty * currentPrice);
-                }
-            });
-        }
-    } catch (e) { console.error("Scan riwayat gagal", e); }
+    } catch (e) { console.error("Harga gagal dimuat"); }
 }
 
 async function connectWallet() {
-    if (!window.ethereum) return alert("Gunakan Browser Web3");
+    if (!window.ethereum) return alert("Gunakan DApp Browser");
     await window.ethereum.request({ method: "eth_requestAccounts" });
     provider = new window.ethers.BrowserProvider(window.ethereum);
     signer = await provider.getSigner();
-    document.getElementById("walletStatus").innerText = "Terhubung: Riwayat Aktif";
     initVault();
 }
 
@@ -147,7 +104,7 @@ function initVault() {
 async function refreshUI() {
     if(!vault) return;
     const table = document.getElementById("tokenTable");
-    table.innerHTML = "<tr><td colspan='4' style='text-align:center'>Menyinkronkan Riwayat Transaksi...</td></tr>";
+    table.innerHTML = "<tr><td colspan='4' style='text-align:center'>Auto-Syncing...</td></tr>";
     
     const vaultAddr = (await vault.getAddress()).toLowerCase();
     let tokenList = [];
@@ -156,74 +113,75 @@ async function refreshUI() {
     }
 
     await fetchPrices(tokenList);
-    await autoScanHistory(vaultAddr); 
-    
     table.innerHTML = "";
-    let totalVal = 0;
-    let totalInv = 0;
+    let totalVal = 0, totalInv = 0;
 
-    // BNB 
+    // BNB Logic
     const bnbBal = await provider.getBalance(vaultAddr);
     const bnbQty = parseFloat(ethers.formatEther(bnbBal));
-    const bnbVal = bnbQty * globalPrices.bnb;
-    totalVal += bnbVal;
-    totalInv += bnbVal; // Anggap modal BNB adalah harga market saat ini
-    addTableRow("BNB", bnbQty, globalPrices.bnb, globalPrices.bnb);
+    totalVal += (bnbQty * globalPrices.bnb);
+    totalInv += (bnbQty * (lockedMeta["BNB"] || globalPrices.bnb));
+    if(!lockedMeta["BNB"] && bnbQty > 0) { lockedMeta["BNB"] = globalPrices.bnb; saveMeta(); }
+    addTableRow("BNB", bnbQty, globalPrices.bnb, lockedMeta["BNB"]);
 
+    // Tokens Logic
     for (const addr of tokenList) {
         try {
             const tContract = new window.ethers.Contract(addr, erc20Abi, provider);
             const [sym, dec, bal] = await Promise.all([tContract.symbol(), tContract.decimals(), tContract.balanceOf(vaultAddr)]);
             const amount = parseFloat(ethers.formatUnits(bal, dec));
-            
-            let price = 0;
-            if (globalPrices.contracts && globalPrices.contracts[addr]) price = globalPrices.contracts[addr].usd;
-            else if (globalPrices[sym.toUpperCase()]) price = globalPrices[sym.toUpperCase()];
-            
-            const meta = autoMeta[addr] || { totalSpent: 0, totalQty: 0 };
-            // Jika tidak ada histori beli, gunakan harga market sebagai modal dasar
-            const avg = meta.totalQty > 0 ? meta.totalSpent / meta.totalQty : price;
+            if (amount === 0) continue;
 
-            addTableRow(sym, amount, price, avg);
+            let price = (globalPrices.contracts && globalPrices.contracts[addr]) ? globalPrices.contracts[addr].usd : (globalPrices[sym.toUpperCase()] || 0);
+            
+            // KUNCI HARGA: Jika token baru masuk dan belum ada harga modal, kunci harga sekarang selamanya
+            if (!lockedMeta[addr]) {
+                lockedMeta[addr] = price;
+                saveMeta();
+            }
+
+            const lockedPrice = lockedMeta[addr];
+            addTableRow(sym, amount, price, lockedPrice);
             totalVal += (amount * price);
-            totalInv += (amount * avg);
+            totalInv += (amount * lockedPrice);
         } catch (e) {}
     }
-    
     updateOverallStats(totalVal, totalInv);
 }
 
-function addTableRow(sym, qty, price, avg) {
+function saveMeta() { localStorage.setItem('vault_locked_prices', JSON.stringify(lockedMeta)); }
+
+function addTableRow(sym, qty, price, lockedP) {
     const table = document.getElementById("tokenTable");
     const val = qty * price;
-    const diff = val - (qty * avg);
-    const pct = avg > 0 ? (diff / (qty * avg)) * 100 : 0;
+    const cost = qty * lockedP;
+    const diff = val - cost;
+    const pct = cost > 0 ? (diff / cost) * 100 : 0;
 
     const row = document.createElement("tr");
     row.innerHTML = `
-        <td><b>${sym}</b> <span class="badge-auto">AUTO</span></td>
-        <td>${qty.toLocaleString('en-US', {maximumFractionDigits:6})}</td>
-        <td class="small-text">Avg: $${avg.toLocaleString('en-US', {maximumFractionDigits:2})}</td>
+        <td><b>${sym}</b><span class="badge-auto">LOCKED</span></td>
+        <td>${qty.toLocaleString('en-US', {maximumFractionDigits:4})}</td>
+        <td class="small-text">In: $${lockedP.toLocaleString()}</td>
         <td>
-            <b>$${val.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}</b><br>
-            <span class="${diff >= 0 ? 'profit' : 'loss'}" style="font-size:0.85em">
-                ${diff >= 0 ? '+' : ''}${pct.toFixed(2)}%
-            </span>
+            <b>$${val.toLocaleString(undefined,{minimumFractionDigits:2})}</b><br>
+            <span class="${diff >= 0 ? 'profit' : 'loss'}" style="font-size:0.85em">${pct.toFixed(2)}%</span>
         </td>
     `;
     table.appendChild(row);
 }
 
 function updateOverallStats(current, invested) {
-    document.getElementById("grandTotalUSD").innerText = "$" + current.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    document.getElementById("grandTotalUSD").innerText = "$" + current.toLocaleString(undefined,{minimumFractionDigits:2});
     const plBox = document.getElementById("totalPL");
     const diff = current - invested;
     const percent = invested > 0 ? (diff / invested) * 100 : 0;
     plBox.className = diff >= 0 ? "profit" : "loss";
-    plBox.innerText = `$${diff.toLocaleString('en-US', {maximumFractionDigits:2})} (${percent.toFixed(2)}%)`;
+    plBox.innerText = `$${diff.toLocaleString(undefined,{maximumFractionDigits:2})} (${percent.toFixed(2)}%)`;
 }
 
 document.getElementById("connectBtn").onclick = connectWallet;
+setInterval(refreshUI, 60000); // Auto update tiap menit
 </script>
 </body>
 </html>
